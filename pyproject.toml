@@ -1,0 +1,20 @@
+[project]
+name = "sandbox"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "diffrax>=0.6.2",
+    "equinox>=0.11.12",
+    "jax[cuda12]>=0.5.2",
+    "lyapunov",
+    "matplotlib>=3.10.1",
+    "numpy>=2.2.3",
+]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+lyapunov = { workspace = true }
