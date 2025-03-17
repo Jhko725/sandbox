@@ -6,11 +6,14 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "diffrax>=0.6.2",
+    "dysts>=0.95",
     "equinox>=0.11.12",
+    "ipykernel>=6.29.5",
     "jax[cuda12]>=0.5.2",
     "lyapunov",
     "matplotlib>=3.10.1",
-    "numpy>=2.2.3",
+    "numba>=0.61.0",
+    "numpy>=2.1.0",
 ]
 
 [tool.uv.workspace]
