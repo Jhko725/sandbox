@@ -1,14 +1,19 @@
+from typing import ClassVar
+
 import equinox as eqx
 import jax.numpy as jnp
 
+from .ode_base import AbstractODE
 
-class Lorenz63(eqx.Module):
+
+class Lorenz63(AbstractODE):
     sigma: float = 10
     beta: float = 8 / 3
     rho: float = 28
+    dim: ClassVar[int] = 3
 
     @eqx.filter_jit
-    def rhs(self, t, u, args):
+    def rhs(self, t, u, args=None):
         del t, args
         x, y, z = u
         dx = self.sigma * (y - x)

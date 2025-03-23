@@ -9,6 +9,7 @@ dependencies = [
     "dynamical-systems",
     "dysts>=0.95",
     "equinox>=0.11.12",
+    "h5py>=3.13.0",
     "ipykernel>=6.29.5",
     "jax[cuda12]>=0.5.2",
     "lyapunov",
