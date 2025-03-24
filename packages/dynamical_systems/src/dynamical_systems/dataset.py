@@ -1,14 +1,15 @@
-from typing import Any, Generic, TypeVar
-
+from typing import Any, Generic, TypeVar, Self
+from pathlib import Path
 import diffrax as dfx
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, ArrayLike, Float
+import h5py
 
 from .continuous import AbstractODE, solve_ode
-from .utils import get_name
+from .utils import get_name, is_arraylike_scalar
 
 
 T = TypeVar("T", bound=ArrayLike)
@@ -27,6 +28,9 @@ class TimeSeriesDataset(eqx.Module, Generic[T]):
     u: Float[T, "batch time dim"]
     u0: Float[T, "batch dim"] | None = None
     metadata: dict[str, Any] | None = eqx.field(static=True, default=None)
+
+    def __eq__(self, other: Self) -> bool:
+        return eqx.tree_equal(self, other, typematch=True).item()
 
     def to_numpy(self) -> "TimeSeriesDataset[np.ndarray]":
         return jax.tree.map(np.asarray, self)
@@ -71,3 +75,31 @@ class TimeSeriesDataset(eqx.Module, Generic[T]):
             "atol": atol,
         }
         return cls(t, u, u0, metadata)
+
+    def save(self, savepath: Path | str, *, overwrite: bool = False) -> None:
+        savepath = Path(savepath).with_suffix(".hdf5")
+        savepath.parent.mkdir(parents=True, exist_ok=True)
+
+        filemode = "w" if overwrite else "w-"
+        with h5py.File(savepath, filemode) as f:
+            f.create_dataset("t", data=self.t)
+            f.create_dataset("u", data=self.u)
+            if self.u0 is not None:
+                f.create_dataset("u0", data=self.u0)
+            for k, v in self.metadata.items():
+                f.attrs[k] = v
+
+    @classmethod
+    def load(cls, loadpath: Path | str, *, to_jax: bool = True) -> Self:
+        with h5py.File(loadpath, "r") as f:
+            t = f["t"][()]
+            u = f["u"][()]
+            try:
+                u0 = f["u0"][()]
+            except KeyError:
+                u0 = None
+            metadata = {
+                k: v.item() if is_arraylike_scalar(v) else v for k, v in f.attrs.items()
+            }
+        dataset = cls(t, u, u0, metadata)
+        return dataset.to_jax() if to_jax else dataset
