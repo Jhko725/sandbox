@@ -1,0 +1,5 @@
+_target_: dynamics_discovery.models.NeuralODE
+in_size: 3
+width_size: 32
+depth: 3
+key: 0
