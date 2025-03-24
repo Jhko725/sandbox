@@ -18,6 +18,7 @@ dependencies = [
     "numba>=0.61.0",
     "numpy>=2.1.0",
     "optax>=0.2.4",
+    "wandb>=0.19.8",
 ]
 
 [tool.uv.workspace]
