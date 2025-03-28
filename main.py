@@ -5,6 +5,7 @@ from collections.abc import Callable
 from omegaconf import DictConfig, OmegaConf
 import hydra
 import wandb
+import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Array
 import equinox as eqx
@@ -12,6 +13,8 @@ import diffrax as dfx
 import optax
 from dynamical_systems.dataset import TimeSeriesDataset
 from dynamical_systems.continuous import solve_ode
+
+jax.config.update("jax_enable_x64", True)
 
 
 # TODO: move this to dynamical_systems.dataset
@@ -132,7 +135,9 @@ def main(cfg: DictConfig) -> None:
     )
     savedir = Path(cfg.checkpointing.savedir)
     eqx.tree_serialise_leaves(
-        savedir / f"lorenz_length={cfg.preprocessing.batch_length}.eqx"
+        savedir
+        / f"lorenz_length={cfg.preprocessing.batch_length}_key={cfg.model.key}.eqx",
+        model,
     )
 
 
