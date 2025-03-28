@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "colorcet>=3.1.0",
     "diffrax>=0.6.2",
     "dynamical-systems",
     "dysts>=0.95",

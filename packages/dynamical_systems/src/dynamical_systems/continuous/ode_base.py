@@ -2,9 +2,7 @@ import abc
 
 import diffrax as dfx
 import equinox as eqx
-import jax
-import jax.numpy as jnp
-from jaxtyping import Float, Array
+from jaxtyping import Array, Float
 
 
 class AbstractODE(eqx.Module):
