@@ -13,6 +13,7 @@ import diffrax as dfx
 import optax
 from dynamical_systems.dataset import TimeSeriesDataset
 from dynamical_systems.continuous import solve_ode
+from dynamical_systems.metrics import lyapunov_gr
 from dynamics_discovery.preprocessing import split_into_chunks
 
 jax.config.update("jax_enable_x64", True)
@@ -21,16 +22,16 @@ jax.config.update("jax_enable_x64", True)
 @eqx.filter_jit
 @partial(eqx.filter_vmap, in_axes=(None, 0, 0))
 def solve_neuralode(model, t, u0):
-    u_pred = solve_ode(
+    lyapunov, u_pred = lyapunov_gr(
         model,
-        t,
         u0,
+        t,
         rtol=1e-4,
         atol=1e-4,
-        max_steps=2048,
-        adjoint=dfx.RecursiveCheckpointAdjoint(checkpoints=4096),
+        max_steps=4,
+        adjoint=dfx.RecursiveCheckpointAdjoint(checkpoints=4),
     )
-    return u_pred
+    return u_pred, lyapunov[:, -1]
 
 
 def loss_mse(
@@ -40,8 +41,8 @@ def loss_mse(
     u0_data=None,
 ):
     del u0_data
-    u_pred = solve_neuralode(model, t_data, u_data[:, 0])
-    return jnp.mean((u_pred - u_data) ** 2)
+    u_pred, lyapunov = solve_neuralode(model, t_data, u_data[:, 0])
+    return jnp.mean((u_pred - u_data) ** 2), lyapunov
 
 
 def train_vanilla(
@@ -60,27 +61,35 @@ def train_vanilla(
     optimizer = optimizer_fn(lr)
     opt_state = optimizer.init(eqx.filter(model, eqx.is_inexact_array))
 
-    @eqx.filter_value_and_grad
+    @partial(eqx.filter_value_and_grad, has_aux=True)
     def loss_grad_fn(model, t_batch, u_batch, u0_batch):
         return loss_fn(model, t_batch, u_batch, u0_batch)
 
     @eqx.filter_jit
     def make_step(model, t_data, u_data, u0_data, opt_state):
-        loss, grads = loss_grad_fn(model, t_data, u_data, u0_data)
+        (loss, lyapunov), grads = loss_grad_fn(model, t_data, u_data, u0_data)
         updates, opt_state = optimizer.update(grads, opt_state)
         model = eqx.apply_updates(model, updates)
-        return loss, model, opt_state
+        return loss, model, opt_state, lyapunov
 
     with wandb.init(
         entity=wandb_entity, project=wandb_project, config=wandb_config
     ) as run:
         loss_history = []
         for epoch in range(max_epochs):
-            loss, model, opt_state = make_step(
+            loss, model, opt_state, lyapunov = make_step(
                 model, t_data, u_data, u0_data, opt_state
             )
-            run.log({"loss": loss, "epoch": epoch}, step=epoch)
+
+            lya_mean = jnp.mean(lyapunov, axis=0)
             print(f"{epoch=}, {loss=}")
+            for i in range(lyapunov.shape[-1]):
+                run.log({f"lambda_{i}": wandb.Histogram(lyapunov[:, i])}, step=epoch)
+                run.log({f"lambda_{i}_mean": lya_mean[i]}, step=epoch)
+            run.log(
+                {"loss": loss, "epoch": epoch, "lambda_max": jnp.max(lya_mean)},
+                step=epoch,
+            )
             loss_history.append(loss.item())
 
     return model, jnp.asarray(loss_history)
