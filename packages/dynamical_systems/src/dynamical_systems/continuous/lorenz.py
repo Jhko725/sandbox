@@ -20,3 +20,10 @@ class Lorenz63(AbstractODE):
         dy = x * (self.rho - z) - y
         dz = x * y - self.beta * z
         return jnp.stack([dx, dy, dz], axis=0)
+
+    def jacobian(self, t, u, args=None):
+        del t, args
+        x, y, z = u
+        return jnp.asarray(
+            [[-self.sigma, self.sigma, 0], [self.rho - z, -1, -x], [y, x, -self.beta]]
+        )

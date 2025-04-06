@@ -9,6 +9,16 @@ def gram_schmidt(
 ) -> tuple[Float[Array, "dim num_vector"], Float[Array, " num_vector"]]:
     """Implementation of the modified Gram-Schmidt orthonormalization algorithm.
 
+    The code is slightedly modified from the original version at
+    https://github.com/tensorflow/probability/blob/main/tensorflow_probability/python/math/gram_schmidt.py
+    By removing an unnecessary jnp.linalg.norm in the main loop, the code has been sped
+    up by about 20%.
+
+    Unlike the original version, the code also outputs the norm of the orthogonalized
+    vectors, which is useful in computing the Lyapunov exponents.
+
+    Below is the documentation from the original code:
+
     We assume here that the vectors are linearly independent. Zero vectors will be
     left unchanged, but will also consume an iteration against `num_vectors`.
 
@@ -38,20 +48,21 @@ def gram_schmidt(
         orthonormalize.
 
     Returns:
-      A Tensor of shape `[d, n]` corresponding to the orthonormalization.
+      bases: A Tensor of shape `[d, n]` corresponding to the orthonormalization.
+      norms: Norm of the basis vectors
     """
-    num_vectors = vectors.shape[-1]
+    n_vectors = vectors.shape[-1]
 
-    def body_fn(vecs, i):
+    def body_fn(i, vecs):
         # Slice out the vector w.r.t. which we're orthogonalizing the rest.
-        u = jnp.nan_to_num(vecs[:, i] / jnp.linalg.norm(vecs[:, i]))
+        u = vecs[:, i]  # (d, )
         # Find weights by dotting the d x 1 against the d x n.
-        weights = u @ vecs
+        weights = u @ vecs  # (n,)
         # Project out vector `u` from the trailing vectors.
-        masked_weights = jnp.where(jnp.arange(num_vectors) > i, weights, 0.0)
+        masked_weights = jnp.where(jnp.arange(n_vectors) > i, weights, 0.0) / weights[i]
         vecs = vecs - jnp.outer(u, masked_weights)
-        return vecs, None
+        return vecs
 
-    vectors, _ = jax.lax.scan(body_fn, vectors, jnp.arange(num_vectors - 1))
-    vec_norm = jnp.linalg.norm(vectors, axis=0, keepdims=True)
-    return jnp.nan_to_num(vectors / vec_norm), vec_norm[0]
+    bases = jax.lax.fori_loop(0, n_vectors - 1, body_fn, vectors)
+    norms = jnp.linalg.norm(bases, axis=0, keepdims=True)
+    return bases / norms, norms[0]
