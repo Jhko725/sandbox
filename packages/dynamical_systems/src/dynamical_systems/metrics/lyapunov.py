@@ -39,7 +39,8 @@ def lyapunov_naive(
 
     eigvals = jnp.linalg.svdvals(u_tangent)
 
-    lya = jnp.log(eigvals) / jnp.expand_dims(t, axis=-1)
+    Dt = jnp.expand_dims(t - t[0], axis=-1)
+    lya = jnp.log(eigvals) / Dt
 
     return lya, u
 
@@ -86,7 +87,8 @@ def lyapunov_gr(
         [jnp.expand_dims(log_norm_sum, 0), log_norm_sums], axis=0
     )
     u_vals = jnp.concatenate([jnp.expand_dims(u0, 0), u_vals], axis=0)
-    return log_norm_sums / jnp.expand_dims(t, axis=-1), u_vals
+    Dt = jnp.expand_dims(t - t[0], axis=-1)
+    return log_norm_sums / Dt, u_vals
 
 
 def perturb(
@@ -148,5 +150,5 @@ def lyapunov_nonlinear(
     u, u_perturbs = u_total[0], u_total[1:]
 
     error_norm = jnp.mean(jnp.linalg.norm(u_perturbs - u, axis=-1), axis=0)
-    lya = jnp.log(error_norm / norm_perturb) / t
+    lya = jnp.log(error_norm / norm_perturb) / (t - t[0])
     return lya, u
