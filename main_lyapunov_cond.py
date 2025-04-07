@@ -110,7 +110,7 @@ def solve_neuralode(model, t, u0, coeffs):
         max_steps=4,
         adjoint=dfx.RecursiveCheckpointAdjoint(checkpoints=4),
     )
-    return u_pred, lyapunov
+    return u_pred, lyapunov[-1]
 
 
 def loss_mse(
@@ -122,7 +122,9 @@ def loss_mse(
 ):
     del u0_data
     u_pred, lyapunov = solve_neuralode(model, t_data, u_data[:, 0], coeffs_batch)
-    return jnp.mean((u_pred - u_data) ** 2), lyapunov
+    lyapunov = jnp.mean(lyapunov, axis=0)
+    lya_loss = jnp.max(jax.nn.relu(lyapunov))
+    return jnp.mean((u_pred - u_data) ** 2) + lya_loss, (lyapunov, lya_loss)
 
 
 def train_vanilla(
@@ -148,27 +150,33 @@ def train_vanilla(
 
     @eqx.filter_jit
     def make_step(model, t_data, u_data, coeffs, u0_data, opt_state):
-        (loss, lyapunov), grads = loss_grad_fn(model, t_data, u_data, coeffs, u0_data)
+        (loss, (lyapunov, lya_loss)), grads = loss_grad_fn(
+            model, t_data, u_data, coeffs, u0_data
+        )
         updates, opt_state = optimizer.update(grads, opt_state)
         model = eqx.apply_updates(model, updates)
-        return loss, model, opt_state, lyapunov
+        return loss, model, opt_state, lyapunov, lya_loss
 
     with wandb.init(
         entity=wandb_entity, project=wandb_project, config=wandb_config
     ) as run:
         loss_history = []
         for epoch in range(max_epochs):
-            loss, model, opt_state, lyapunov = make_step(
+            loss, model, opt_state, lya_mean, lya_loss = make_step(
                 model, t_data, u_data, coeffs_batched, u0_data, opt_state
             )
 
-            lya_mean = jnp.mean(lyapunov, axis=0)[-1]
             print(f"{epoch=}, {loss=}")
             for i in range(len(lya_mean)):
                 # run.log({f"lambda_{i}": wandb.Histogram(lyapunov[:, i])}, step=epoch)
                 run.log({f"lambda_cond_{i}_mean": lya_mean[i]}, step=epoch)
             run.log(
-                {"loss": loss, "epoch": epoch, "lambda_cond_max": jnp.max(lya_mean)},
+                {
+                    "mse": loss - lya_loss,
+                    "loss": loss,
+                    "epoch": epoch,
+                    "lambda_cond_max": jnp.max(lya_mean),
+                },
                 step=epoch,
             )
             loss_history.append(loss.item())
