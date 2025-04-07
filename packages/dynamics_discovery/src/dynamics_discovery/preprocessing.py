@@ -1,19 +1,39 @@
+import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 
-# TODO: move this to dynamical_systems.dataset
-# TODO: add a share_time: bool parameter
+def standardize(x: Array, axis: int = 0) -> Array:
+    return (x - jnp.mean(x, axis=axis)) / jnp.std(x, axis=axis)
+
+
 def split_into_chunks(
-    sequence: Float[Array, " N"], chunk_size: int
-) -> tuple[Float[Array, "B N"], Float[Array, " N_remainder"] | None]:
-    # TODO: Handle batch dimension in the sequence argument
-    # TODO: Implement the case when there are overlaps between chunks, as specified by the overlap: int parameter
-    chunks = jnp.split(sequence, jnp.arange(chunk_size, len(sequence), chunk_size))
-    if len(chunks[-2]) == len(chunks[-1]):
-        batched_chunks = jnp.stack(chunks, axis=0)
-        remainder = None
-    else:
-        batched_chunks = jnp.stack(chunks[:-1], axis=0)
-        remainder = chunks[-1]
-    return batched_chunks, remainder
+    sequence: Float[Array, " time ?dim"], chunk_size: int, overlap: int = 0
+) -> Float[Array, "batch chunk_size ?dim"]:
+    """
+    Split an array into possibly overlapping chunks.
+
+    The number of resulting chunks is derived from the following inequality:
+    (n-1)*(chunk_size-overlap)+chunk_size <= len(sequence)
+                                            < n*(chunk_size-overlap)+chunk_size
+
+    overlap is an integer ranging from (-len(sequence)+1, len(sequence)-1).
+
+    If the given chunk_size, overlap parameters do not cleanly divide the length
+    of the sequence array, the remaining end bits are discarded.
+    """
+    if overlap < 0:
+        overlap = chunk_size + overlap
+    assert 0 <= overlap < chunk_size, "Overlap must be smaller than the chunk_size"
+
+    num_chunks = (len(sequence) - chunk_size) // (chunk_size - overlap) + 1
+
+    def slice_chunk(start_ind: int, arg=None):
+        del arg
+
+        return start_ind + chunk_size - overlap, jax.lax.dynamic_slice_in_dim(
+            sequence, start_ind, chunk_size, axis=0
+        )
+
+    _, chunks = jax.lax.scan(slice_chunk, 0, length=num_chunks)
+    return chunks
