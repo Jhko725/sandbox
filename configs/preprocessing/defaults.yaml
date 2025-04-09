@@ -1,1 +1,6 @@
 batch_length: 100
+overlap: 0
+noise:
+  rel_noise_strength: 0.0
+  preserve_first: false
+  key: 0

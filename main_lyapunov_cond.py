@@ -199,8 +199,12 @@ def main(cfg: DictConfig) -> None:
     u_train_test_norm = (u_train_test - u_train_mean) / u_train_std
 
     u_train, u_test = u_train_test_norm
-    t_train_batched, _ = split_into_chunks(dataset.t, cfg.preprocessing.batch_length)
-    u_train_batched, _ = split_into_chunks(u_train, cfg.preprocessing.batch_length)
+    t_train_batched, u_train_batched = jax.tree.map(
+        lambda x: split_into_chunks(
+            x, cfg.preprocessing.batch_length, cfg.preprocessing.overlap
+        ),
+        (dataset.t, u_train),
+    )
 
     optimizer_fn = hydra.utils.get_method(cfg.training.optimizer_fn)
 
@@ -218,7 +222,7 @@ def main(cfg: DictConfig) -> None:
     savedir = Path(cfg.checkpointing.savedir)
     eqx.tree_serialise_leaves(
         savedir
-        / f"lorenz_length={cfg.preprocessing.batch_length}_key={cfg.model.key}_lyapunov.eqx",
+        / f"lorenz_length={cfg.preprocessing.batch_length}_key={cfg.model.key}_lyapunov_cond.eqx",
         model,
     )
 
