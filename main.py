@@ -13,9 +13,9 @@ import diffrax as dfx
 import optax
 from dynamical_systems.dataset import TimeSeriesDataset
 from dynamical_systems.continuous import solve_ode
-from dynamics_discovery.preprocessing import split_into_chunks
-
-jax.config.update("jax_enable_x64", True)
+from dynamics_discovery.preprocessing import split_into_chunks, standardize, add_noise
+from dynamics_discovery.tree_utils import tree_satisfy_float_precision
+import matplotlib.pyplot as plt
 
 
 @eqx.filter_jit
@@ -53,9 +53,7 @@ def train_vanilla(
     optimizer_fn: Callable = optax.adabelief,
     lr: float = 1e-3,
     max_epochs: int = 5000,
-    wandb_entity: str | None = None,
-    wandb_project: str | None = None,
-    wandb_config: dict | None = None,
+    wandb_run: wandb.sdk.wandb_run.Run | None = None,
 ):
     optimizer = optimizer_fn(lr)
     opt_state = optimizer.init(eqx.filter(model, eqx.is_inexact_array))
@@ -71,15 +69,13 @@ def train_vanilla(
         model = eqx.apply_updates(model, updates)
         return loss, model, opt_state
 
-    with wandb.init(
-        entity=wandb_entity, project=wandb_project, config=wandb_config
-    ) as run:
+    with wandb_run:
         loss_history = []
         for epoch in range(max_epochs):
             loss, model, opt_state = make_step(
                 model, t_data, u_data, u0_data, opt_state
             )
-            run.log({"loss": loss, "epoch": epoch}, step=epoch)
+            wandb_run.log({"loss": loss, "epoch": epoch}, step=epoch)
             print(f"{epoch=}, {loss=}")
             loss_history.append(loss.item())
 
@@ -88,24 +84,42 @@ def train_vanilla(
 
 @hydra.main(config_path="./configs", config_name="config", version_base=None)
 def main(cfg: DictConfig) -> None:
+    jax.config.update("jax_enable_x64", cfg.enable_x64)
+
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
     config_dict.pop("wandb")
 
     model = hydra.utils.instantiate(cfg.model)
     dataset = TimeSeriesDataset.load(cfg.data.loadpath)
 
-    # TODO: refactor the standardization part
-    u_train_test = dataset.u
-    u_train_mean = jnp.mean(u_train_test[0], axis=0)
-    u_train_std = jnp.std(u_train_test[0], axis=0)
-    u_train_test_norm = (u_train_test - u_train_mean) / u_train_std
+    if not tree_satisfy_float_precision(model, dataset, expect_x64=cfg.enable_x64):
+        raise TypeError(
+            """Model and/or dataset does not conform to the 
+            expected floating point precision!"""
+        )
 
-    u_train, u_test = u_train_test_norm
-    t_train_batched, _ = split_into_chunks(dataset.t, cfg.preprocessing.batch_length)
-    u_train_batched, _ = split_into_chunks(u_train, cfg.preprocessing.batch_length)
+    u_train = standardize(dataset.u[0])
 
+    t_train_batched, u_train_batched = jax.tree.map(
+        lambda x: split_into_chunks(
+            x, cfg.preprocessing.batch_length, cfg.preprocessing.overlap
+        ),
+        (dataset.t, u_train),
+    )
+    u_train_batched = add_noise(
+        u_train_batched,
+        cfg.preprocessing.noise.rel_noise_strength,
+        cfg.preprocessing.noise.preserve_first,
+        cfg.preprocessing.noise.key,
+    )
     optimizer_fn = hydra.utils.get_method(cfg.training.optimizer_fn)
 
+    fig, ax = plt.subplots(1, 1)
+    ax.plot(t_train_batched[0], u_train_batched[0, :, 0])
+    fig.savefig("./test.png")
+    run = wandb.init(
+        entity=cfg.wandb.entity, project=cfg.wandb.project, config=config_dict
+    )
     model = train_vanilla(
         model,
         t_train_batched,
@@ -113,11 +127,11 @@ def main(cfg: DictConfig) -> None:
         optimizer_fn=optimizer_fn,
         lr=cfg.training.lr,
         max_epochs=cfg.training.max_epochs,
-        wandb_entity=cfg.wandb.entity,
-        wandb_project=cfg.wandb.project,
-        wandb_config=config_dict,
+        wandb_run=run,
     )
     savedir = Path(cfg.checkpointing.savedir)
+    if not savedir.exists():
+        savedir.mkdir()
     eqx.tree_serialise_leaves(
         savedir
         / f"lorenz_length={cfg.preprocessing.batch_length}_key={cfg.model.key}.eqx",
@@ -127,3 +141,5 @@ def main(cfg: DictConfig) -> None:
 
 if __name__ == "__main__":
     main()
+
+# %%

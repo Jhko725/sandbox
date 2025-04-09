@@ -1,10 +1,83 @@
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Shaped
 
 
-def standardize(x: Array, axis: int = 0) -> Array:
-    return (x - jnp.mean(x, axis=axis)) / jnp.std(x, axis=axis)
+def coerce_to_3d(x: Array) -> Shaped[Array, "?batch dim1 dim2"]:
+    n_dim = x.ndim
+    if n_dim == 2:
+        x = jnp.expand_dims(x, axis=0)
+    elif n_dim < 2 or n_dim > 3:
+        raise ValueError("The rank of x must be 2 or 3. Instead got rank {n_dim}")
+    return x
+
+
+def standardize(
+    array: Float[Array, "?batch time dim"],
+    other: Float[Array, "?batch_other time dim"] | None = None,
+    axis: int = -2,
+) -> tuple[
+    Float[Array, "?batch time dim"], Float[Array, "?batch_other time dim"] | None
+]:
+    """
+    Standardizes a given 2D or 3D array along some axis.
+    For 2D arrays, axis specifies the axis over which the mean and standard deviations
+    are to be calculated.
+    For 3D arrays, the mean and standard deviation reductions are additionally performed
+    over the leading axis, which is assumed to correspond to the batch dimension.
+
+    The argument `other` is used to pass in an additional array, which is standardized
+    using the statistics of the first argument `array`.
+
+    This is useful when preprocessing train and validation/test sets for model training,
+    as using the combined statistics for both train and validation/test sets for
+    standardization leads to data leakage.
+    """
+    orig_shape = array.shape
+    array = coerce_to_3d(array)
+    mean = jnp.mean(array, axis=(0, axis), keepdims=True)
+    std = jnp.std(array, axis=(0, axis), keepdims=True)
+
+    arr_stdized = jnp.reshape((array - mean) / std, orig_shape)
+    if other is None:
+        return arr_stdized
+    else:
+        othr_stdized = jnp.reshape((other - mean) / std, other.shape)
+        return arr_stdized, othr_stdized
+
+
+def add_noise(
+    array: Float[Array, "?batch time dim"],
+    rel_noise_strength: float = 0.05,
+    preserve_first: bool = False,
+    key: Array | int = jax.random.PRNGKey(0),
+) -> Float[Array, "? batch time dim"]:
+    """
+    Adds Gaussian noise to given array, per dimension.
+
+    The noise strength is set to be a multiple of the array standard deviation,
+    calculated over the first two axes.
+
+    preserve_first determines whether to keep the first timepoint of the array
+    (array[:,0]) un-noised or not.
+    This can be useful when experimenting with autoregressive models whose outputs are
+    sensitive to the initial condition used.
+    """
+    if rel_noise_strength < 0:
+        raise ValueError("Relative noise strength must be a nonnegative number.")
+    elif rel_noise_strength == 0:
+        array_noised = array
+    else:
+        std = jnp.std(coerce_to_3d(array), axis=(0, 1), keepdims=True)
+
+        key = jax.random.PRNGKey(key)
+        noise = jax.random.normal(key, array.shape) * std * rel_noise_strength
+        array_noised = array + noise
+
+        if preserve_first:
+            array_noised = array_noised.at[:, 0].set(array[:, 0])
+
+    return array_noised
 
 
 def split_into_chunks(
