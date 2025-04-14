@@ -1,3 +1,3 @@
-from .ode_base import AbstractODE, solve_ode
-from .tangent import TangentODE
-from .lorenz import Lorenz63
+from .lorenz import Lorenz63 as Lorenz63
+from .ode_base import AbstractODE as AbstractODE, solve_ode as solve_ode
+from .tangent import TangentODE as TangentODE

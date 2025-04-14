@@ -1,1 +1,1 @@
-from .neuralode import NeuralODE
+from .neuralode import NeuralODE as NeuralODE

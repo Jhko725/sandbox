@@ -1,1 +1,1 @@
-from .lyapunov import lyapunov_gr
+from .lyapunov import lyapunov_gr as lyapunov_gr

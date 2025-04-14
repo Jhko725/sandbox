@@ -1,9 +1,9 @@
 from collections.abc import Callable
 
+import diffrax as dfx
 import equinox as eqx
 import jax
-import diffrax as dfx
-from jaxtyping import Float, Array
+from jaxtyping import Array, Float
 
 
 class NeuralODE(eqx.Module):

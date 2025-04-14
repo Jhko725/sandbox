@@ -1,20 +1,20 @@
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from collections.abc import Callable
 
-from omegaconf import DictConfig, OmegaConf
+import diffrax as dfx
+import equinox as eqx
 import hydra
-import wandb
 import jax
 import jax.numpy as jnp
-from jaxtyping import Float, Array
-import equinox as eqx
-import diffrax as dfx
 import optax
+import wandb
 from dynamical_systems.dataset import TimeSeriesDataset
-from dynamical_systems.continuous import solve_ode
 from dynamical_systems.metrics import lyapunov_gr
 from dynamics_discovery.preprocessing import split_into_chunks
+from jaxtyping import Array, Float
+from omegaconf import DictConfig, OmegaConf
+
 
 jax.config.update("jax_enable_x64", True)
 
@@ -129,7 +129,8 @@ def main(cfg: DictConfig) -> None:
     savedir = Path(cfg.checkpointing.savedir)
     eqx.tree_serialise_leaves(
         savedir
-        / f"lorenz_length={cfg.preprocessing.batch_length}_key={cfg.model.key}_lyapunov.eqx",
+        / f"""lorenz_length={cfg.preprocessing.batch_length}_key={cfg.model.key}
+        _lyapunov.eqx""",
         model,
     )
 
