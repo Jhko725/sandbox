@@ -10,7 +10,7 @@ InShape = Float[Array, " *shape_in"]
 OutShape = Float[Array, " *shape_out"]
 
 
-class AbstractInvertible(eqx.Module):
+class AbstractInvertible(eqx.Module, strict=True):
     """
     Abstract base class for models that support an inverse transformation.
 
@@ -25,7 +25,7 @@ class AbstractInvertible(eqx.Module):
     def inverse(self, x_out: OutShape) -> InShape: ...
 
 
-class InvertibleLinear(AbstractInvertible):
+class InvertibleLinear(AbstractInvertible, strict=True):
     """
     Wraps the `equinox.nn.Linear` layer to provide the inverse transformation.
 

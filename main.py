@@ -13,7 +13,7 @@ import wandb
 from dynamical_systems.continuous import solve_ode
 from dynamical_systems.dataset import TimeSeriesDataset
 from dynamics_discovery.preprocessing import add_noise, split_into_chunks, standardize
-from dynamics_discovery.tree_utils import tree_satisfy_float_precision
+from dynamics_discovery.utils.tree import tree_satisfy_float_precision
 from jaxtyping import Array, Float
 from omegaconf import DictConfig, OmegaConf
 
