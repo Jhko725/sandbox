@@ -1,12 +1,13 @@
-from typing import Any, Generic, TypeVar, Self
 from pathlib import Path
+from typing import Any, Generic, Self, TypeVar
+
 import diffrax as dfx
 import equinox as eqx
+import h5py
 import jax
 import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, ArrayLike, Float
-import h5py
 
 from .continuous import AbstractODE, solve_ode
 from .utils import get_name, is_arraylike_scalar

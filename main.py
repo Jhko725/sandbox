@@ -1,21 +1,21 @@
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from collections.abc import Callable
 
-from omegaconf import DictConfig, OmegaConf
+import diffrax as dfx
+import equinox as eqx
 import hydra
-import wandb
 import jax
 import jax.numpy as jnp
-from jaxtyping import Float, Array
-import equinox as eqx
-import diffrax as dfx
-import optax
-from dynamical_systems.dataset import TimeSeriesDataset
-from dynamical_systems.continuous import solve_ode
-from dynamics_discovery.preprocessing import split_into_chunks, standardize, add_noise
-from dynamics_discovery.tree_utils import tree_satisfy_float_precision
 import matplotlib.pyplot as plt
+import optax
+import wandb
+from dynamical_systems.continuous import solve_ode
+from dynamical_systems.dataset import TimeSeriesDataset
+from dynamics_discovery.preprocessing import add_noise, split_into_chunks, standardize
+from dynamics_discovery.tree_utils import tree_satisfy_float_precision
+from jaxtyping import Array, Float
+from omegaconf import DictConfig, OmegaConf
 
 
 @eqx.filter_jit

@@ -38,8 +38,9 @@ def solve_ode(
 ) -> Float[Array, "*batch time dim"]:
     """A convenience wrapper function around diffrax.diffeqsolve."""
 
-    # assert u0.shape[-1] == ode.dim, f"""Shape of the initial condition u0: (..., dim) =
-    #    {u0.shape} must match the dimensionality of the ode = {ode.dim}"""
+    # assert u0.shape[-1] == ode.dim, f"""Shape of the initial condition
+    # u0: (..., dim) = {u0.shape} must match the dimensionality of the
+    # ode = {ode.dim}"""
 
     sol = dfx.diffeqsolve(
         dfx.ODETerm(ode.rhs),
