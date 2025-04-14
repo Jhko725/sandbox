@@ -1,61 +1,100 @@
 from collections.abc import Callable
+from typing import Any
 
 import diffrax as dfx
 import equinox as eqx
 import jax
 from jaxtyping import Array, Float
 
+from ..custom_types import FloatScalar, PRNGKeyArrayLike
+from .abstract import AbstractDynamicsModel
 
-class NeuralODE(eqx.Module):
-    in_size: int
-    width_size: int
-    depth: int
-    out_size: int | None = None
-    activation: Callable = jax.nn.gelu
-    key: int = 0
-    solver: dfx.AbstractSolver = dfx.Tsit5()
-    stepsize_controller: dfx.AbstractStepSizeController = dfx.PIDController(
-        rtol=1e-4, atol=1e-4
-    )
-    net: eqx.nn.MLP = eqx.field(init=False)
-    dim: int = eqx.field(init=False)
 
-    def __post_init__(self):
-        if self.out_size is None:
-            self.out_size = self.in_size
+ODEState = Float[Array, " dim"]
+StackedODEState = Float[Array, "time dim"]
+
+
+class NeuralODE(AbstractDynamicsModel):
+    net: eqx.nn.MLP
+    dim: int = eqx.field(static=True)
+    width: int = eqx.field(static=True)
+    depth: int = eqx.field(static=True)
+    activation: Callable = eqx.field(static=True)
+    solver: dfx.AbstractSolver = eqx.field(static=True)
+    stepsize_controller: dfx.AbstractStepSizeController = eqx.field(static=True)
+    dt0: float | None = eqx.field(static=True)
+
+    def __init__(
+        self,
+        dim: int,
+        width: int,
+        depth: int,
+        activation: Callable = jax.nn.gelu,
+        solver: dfx.AbstractSolver = dfx.Tsit5(),
+        rtol: float | None = 1e-4,
+        atol: float | None = 1e-4,
+        dt0: float | None = None,
+        *,
+        key: PRNGKeyArrayLike = 0,
+    ):
+        self.dim = dim
+        self.width = width
+        self.depth = depth
+        self.activation = activation
         self.net = eqx.nn.MLP(
-            in_size=self.in_size,
-            out_size=self.out_size,
-            width_size=self.width_size,
+            in_size=self.dim,
+            out_size=self.dim,
+            width_size=self.width,
             depth=self.depth,
             activation=self.activation,
-            key=jax.random.PRNGKey(self.key),
+            key=jax.random.PRNGKey(key),
         )
-        self.dim = self.out_size
+        self.solver = solver
+        self.stepsize_controller = self._initialize_stepsize_controller(rtol, atol)
+        self.dt0 = dt0
+
+    def _initialize_stepsize_controller(
+        self, rtol: float | None, atol: float | None
+    ) -> dfx.AbstractStepSizeController:
+        match (rtol, atol):
+            case (rtol_, atol_):
+                stepsize_ctrler = dfx.PIDController(rtol_, atol_)
+            case (tol, None) | (None, tol):
+                stepsize_ctrler = dfx.PIDController(tol, tol)
+            case (None, None):
+                stepsize_ctrler = dfx.ConstantStepSize()
+        return stepsize_ctrler
 
     def rhs(self, t, u, args):
         del t, args
         return self.net(u)
 
-    def _set_dt0(self, t) -> Float[Array, ""] | None:
-        if isinstance(self.stepsize_controller, dfx.ConstantStepSize):
-            dt0 = t[1] - t[0]
-        else:
-            dt0 = None
-        return dt0
-
-    def solve(self, t, u0, args=None, **diffeqsolve_kwargs):
-        dt0 = self._set_dt0(t)
-        sol = dfx.diffeqsolve(
+    def _diffeqsolve(self, t0, t1, u0, saveat: dfx.SaveAt, **diffeqsolve_kwargs):
+        return dfx.diffeqsolve(
             dfx.ODETerm(self.rhs),
             self.solver,
-            t[0],
-            t[-1],
-            dt0,
+            t0,
+            t1,
+            self.dt0,
             u0,
-            args,
-            saveat=dfx.SaveAt(ts=t),
+            saveat=saveat,
             stepsize_controller=self.stepsize_controller,
             **diffeqsolve_kwargs,
-        )
-        return sol.ys
+        ).ys
+
+    def step(
+        self,
+        t0: FloatScalar,
+        t1: FloatScalar,
+        u0: ODEState,
+        args: Any = None,
+        **kwargs: Any,
+    ) -> ODEState:
+        del args
+        return self._diffeqsolve(t0, t1, u0, saveat=dfx.SaveAt(t1=True), **kwargs)
+
+    def solve(
+        self, ts: Float[Array, " time"], u0: ODEState, args: Any = None, **kwargs
+    ) -> StackedODEState:
+        del args
+        return self._diffeqsolve(ts[0], ts[-1], u0, saveat=dfx.SaveAt(ts=ts), **kwargs)
