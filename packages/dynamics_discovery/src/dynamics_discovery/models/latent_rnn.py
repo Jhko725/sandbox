@@ -24,7 +24,7 @@ class LatentRNN(AbstractLatentDynamicsModel):
     def __init__(
         self,
         dim: int,
-        dim_latent: int = 20,
+        dim_latent: int = 60,
         *,
         key: PRNGKeyArrayLike = 0,
     ):
@@ -72,7 +72,7 @@ class LatentLSTM(AbstractLatentDynamicsModel):
     def __init__(
         self,
         dim: int,
-        dim_latent: int = 20,
+        dim_latent: int = 30,
         *,
         key: PRNGKeyArray | int = 0,
     ):

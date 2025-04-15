@@ -1,11 +1,11 @@
 _target_: ???
 optimizer:
   _target_: optax.adabelief
-  learning_rate: 1e-3
+  learning_rate: 2e-4
 loss_fn:
   _target_: dynamics_discovery.loss_functions.MSELoss
 max_epochs: 5000
-savedir: ./results
-savename: ${..data.name}_len=${..preprocessing.batch_length}_key=${..model.key}.eqx
+savedir: ./results/${..data.name}/
+savename: $len=${..preprocessing.batch_length}_key=${..model.key}.eqx
 wandb_entity: jhko725
 wandb_project: mikhaeil
