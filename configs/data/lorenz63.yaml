@@ -1,1 +1,3 @@
+name: lorenz63
+dim: 3
 loadpath: "./data/lorenz.hdf5"

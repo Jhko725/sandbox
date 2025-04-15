@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from jaxtyping import Array, Float, Int, PRNGKeyArray
 
 
@@ -7,3 +9,5 @@ FloatScalar = Float[Array, ""]
 FloatScalarLike = float | FloatScalar
 
 PRNGKeyArrayLike = IntScalarLike | PRNGKeyArray
+
+PathLike = str | Path

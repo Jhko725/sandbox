@@ -1,5 +1,13 @@
+defaults:
+  - base
+
 _target_: dynamics_discovery.models.NeuralODE
-in_size: 3
-width_size: 32
+width: 32
 depth: 3
-key: 0
+activation: 
+  _target_: hydra.utils.get_method
+  path: jax.nn.gelu
+solver: 
+  _target_: diffrax.Tsit5
+rtol: 1e-4
+atol: 1e-4

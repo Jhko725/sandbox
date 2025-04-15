@@ -1,0 +1,5 @@
+defaults:
+  - base
+
+_target_: dynamics_discovery.models.LatentLSTM
+dim_latent: 30

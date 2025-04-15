@@ -1,67 +1,61 @@
+import abc
 from collections.abc import Callable
 from functools import partial
-from typing import Any, Protocol
+from typing import Any
 
-import diffrax as dfx
 import equinox as eqx
 import jax.numpy as jnp
-from dynamical_systems.continuous import solve_ode
 from jaxtyping import Array, Float
 
-from .models import NeuralODE
+from .custom_types import FloatScalar
+from .models.abstract import AbstractDynamicsModel
 
 
-class LossProtocol(Protocol):
+class AbstractDynamicsLoss(eqx.Module, strict=True):
     """
     A protocol defining the function signature for loss functions that are compatible
     with the training methods in this library.
     """
 
-    # TODO: later, relax the type constraint on model
+    @abc.abstractmethod
     def __call__(
         self,
-        model: NeuralODE,
+        model: AbstractDynamicsModel,
         t_data: Float[Array, "batch time"],
         u_data: Float[Array, "batch time dim"],
         args: Any,
-    ) -> tuple[Float[Array, ""], Any]: ...
+        **kwargs: Any,
+    ) -> FloatScalar: ...
 
 
-@eqx.filter_jit
-@partial(eqx.filter_vmap, in_axes=(None, 0, 0))
-def solve_neuralode(model, t, u0):
-    u_pred = solve_ode(
-        model,
-        t,
-        u0,
-        rtol=1e-4,
-        atol=1e-4,
-        max_steps=2048,
-        adjoint=dfx.RecursiveCheckpointAdjoint(checkpoints=4096),
-    )
-    return u_pred
+class MSELoss(AbstractDynamicsLoss):
+    def __call__(
+        self,
+        model: AbstractDynamicsModel,
+        t_data: Float[Array, " batch time"],
+        u_data: Float[Array, " batch time dim"],
+        args: Any = None,
+        **kwargs: Any,
+    ) -> FloatScalar:
+        @partial(eqx.filter_vmap, in_axes=(0, 0))
+        def _mse(t_data_: Float[Array, " time"], u_data_):
+            u_pred = model.solve(t_data_, u_data_[0], args, **kwargs)
+            return jnp.mean((u_pred - u_data_) ** 2)
+
+        mse_batch = _mse(t_data, u_data)
+        return jnp.mean(mse_batch)
 
 
-def loss_mse(
-    model,
-    t_data: Float[Array, "batch time"],
-    u_data: Float[Array, "batch time dim"],
-    args=None,
-):
-    del args
-    u_pred = solve_neuralode(model, t_data, u_data[:, 0])
-    return jnp.mean((u_pred - u_data) ** 2), None
-
-
-class JacobianMatchingMSE(LossProtocol):
-    analytical_jacobian: Callable
+class JacobianMatchingMSE(AbstractDynamicsLoss):
+    analytical_jacobian: Callable = eqx.field(static=True)
     jabobian_weight: float = 1.0
 
     def __call__(
         self,
-        model: NeuralODE,
+        model: AbstractDynamicsModel,
         t_data: Float[Array, "batch time"],
         u_data: Float[Array, "batch time dim"],
         args: Any,
-    ) -> tuple[Float[Array, ""], Any]:
+        **kwargs: Any,
+    ) -> FloatScalar:
         pass
