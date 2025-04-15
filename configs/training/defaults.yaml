@@ -1,3 +1,0 @@
-optimizer_fn: optax.adabelief
-lr: 1e-3
-max_epochs: 5000
