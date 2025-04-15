@@ -3,9 +3,7 @@ defaults:
   - model: neuralode
   - data: lorenz63
   - preprocessing: defaults
-  - training: defaults
-  - checkpointing: defaults
-  - wandb: defaults
+  - training: vanilla
   - override hydra/launcher: submitit_slurm
 
 hydra:
