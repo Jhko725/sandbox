@@ -1,5 +1,7 @@
+from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
-from typing import Any, Generic, Self, TypeVar
+from typing import Any, Self, TypeVar
 
 import diffrax as dfx
 import equinox as eqx
@@ -16,7 +18,7 @@ from .utils import get_name, is_arraylike_scalar
 T = TypeVar("T", bound=ArrayLike)
 
 
-class TimeSeriesDataset(eqx.Module, Generic[T]):
+class TimeSeriesDataset(eqx.Module, Sequence[T]):
     """A class to hold time series data from numerical simulations or experiments.
 
     The class is deliberately designed to be an equinox Module to make it a PyTree:
@@ -25,13 +27,46 @@ class TimeSeriesDataset(eqx.Module, Generic[T]):
     TimeSeriesDataset.to_jax().
     """
 
-    t: Float[T, " time"]
+    t: Float[T, "?batch time"]
     u: Float[T, "batch time dim"]
     u0: Float[T, "batch dim"] | None = None
-    metadata: dict[str, Any] | None = eqx.field(static=True, default=None)
+    metadata: dict[str, Any] | None = eqx.field(static=True)
+
+    def __init__(
+        self,
+        t: Float[T, "?batch time"] | Float[T, " time"],
+        u: Float[T, "batch time dim"],
+        u0: Float[T, "batch dim"] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ):
+        # In principle, should use np.at_least2d if t is a numpy array
+        self.t = jnp.atleast_2d(t)
+        self.u = u
+        self.u0 = u0
+        self.metadata = metadata
 
     def __eq__(self, other: Self) -> bool:
         return eqx.tree_equal(self, other, typematch=True).item()
+
+    def __len__(self) -> int:
+        """Returns the number of time points in the dataset."""
+        return self.u.shape[1]
+
+    def __getitem__(self, idx) -> Self:
+        """Returns a sub-dataset by indexing along the time axis.
+
+        All index types supported by numpy and jax should work."""
+        t, u = self.t[:, idx], self.u[:, idx]
+
+        if self.u0 is None:
+            u0 = None
+        else:
+            if u.ndim < 2:
+                u0 = u
+            else:
+                u0 = u[:, 0]
+
+        return replace(self, t=t, u=u, u0=u0)
 
     def to_numpy(self) -> "TimeSeriesDataset[np.ndarray]":
         return jax.tree.map(np.asarray, self)
@@ -43,7 +78,7 @@ class TimeSeriesDataset(eqx.Module, Generic[T]):
     def from_dynamical_system(
         cls,
         dynamics: AbstractODE,
-        t: Float[T, " time"],
+        t: Float[T, "?batch time"],
         u0: Float[T, "batch dim"],
         solver: dfx.AbstractAdaptiveSolver = dfx.Tsit5(),
         rtol: float = 1e-7,

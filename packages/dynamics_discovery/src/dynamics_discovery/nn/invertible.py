@@ -74,7 +74,7 @@ class InvertibleLinear(AbstractInvertible, strict=True):
         if self.bias is not None:
             x_out = x_out - self.bias
 
-        x_in = jnp.linalg.pinv(self.weight) @ x_out
+        x_in = jnp.linalg.pinv(self.weight, rtol=1e-15) @ x_out
 
         if self._linear.in_features == "scalar":
             assert jnp.shape(x_in) == (1,)

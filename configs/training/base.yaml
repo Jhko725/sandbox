@@ -4,8 +4,8 @@ optimizer:
   learning_rate: 2e-4
 loss_fn:
   _target_: dynamics_discovery.loss_functions.MSELoss
-max_epochs: 5000
-savedir: ./results/${..data.name}/
-savename: $len=${..preprocessing.batch_length}_key=${..model.key}.eqx
+max_epochs: 20000
+savedir: ./results/lorenz63/
+savename: len=${..preprocessing.batch_length}_noise=${..preprocessing.noise.rel_noise_strength}_key=${..model.key}.eqx
 wandb_entity: jhko725
-wandb_project: mikhaeil
+wandb_project: lorenz63
