@@ -2,7 +2,7 @@ from typing import ClassVar
 
 import equinox as eqx
 import jax.numpy as jnp
-
+from jaxtyping import Float, Array
 from .ode_base import AbstractODE
 
 
@@ -21,7 +21,7 @@ class Lorenz63(AbstractODE):
         dz = x * y - self.beta * z
         return jnp.stack([dx, dy, dz], axis=0)
 
-    def jacobian(self, t, u, args=None):
+    def jacobian(self, t: Float[Array, ""], u: Float[Array, " self.dim"], args=None):
         del t, args
         x, y, z = u
         return jnp.asarray(

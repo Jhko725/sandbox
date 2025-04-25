@@ -34,7 +34,7 @@ class LatentRNN(AbstractLatentDynamicsModel):
         key_rnn, key_latent = jax.random.split(jax.random.PRNGKey(key), 2)
         self.rnncell = RNNCell(1, dim_latent, use_bias=True, key=key_rnn)
         self.latent2obs = InvertibleLinear(
-            dim_latent, dim, use_bias=True, key=key_latent
+            dim_latent, dim, use_bias=False, key=key_latent
         )
 
     def to_latent(self, u: ModelState) -> LatentState:
@@ -82,7 +82,7 @@ class LatentLSTM(AbstractLatentDynamicsModel):
         key_rnn, key_latent = jax.random.split(jax.random.PRNGKey(key), 2)
         self.rnncell = eqx.nn.LSTMCell(1, dim_latent, use_bias=True, key=key_rnn)
         self.latent2obs = InvertibleLinear(
-            dim_latent, dim, use_bias=True, key=key_latent
+            dim_latent, dim, use_bias=False, key=key_latent
         )
 
     def to_latent(self, u: ModelState) -> LSTMLatentState:
