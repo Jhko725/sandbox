@@ -19,14 +19,14 @@ def main(cfg: DictConfig) -> None:
             """Model and/or dataset does not conform to the 
             expected floating point precision!"""
         )
-    
+
     u_train = standardize(dataset.u[0, 30000:])
 
     t_train_batched, u_train_batched = jax.tree.map(
         lambda x: split_into_chunks(
             x, cfg.preprocessing.batch_length, cfg.preprocessing.overlap
         ),
-        (dataset.t[30000:], u_train),
+        (dataset.t[0, 30000:], u_train),
     )
     u_train_batched = add_noise(
         u_train_batched,
