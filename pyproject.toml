@@ -15,6 +15,7 @@ dependencies = [
     "hydra-submitit-launcher>=1.2.0",
     "ipykernel>=6.29.5",
     "jax[cuda12]>=0.5.2",
+    "lineax>=0.0.7",
     "lyapunov",
     "matplotlib>=3.10.1",
     "matplotlib-utils",

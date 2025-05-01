@@ -47,13 +47,14 @@ def standardize(
 
 
 def add_noise(
-    array: Float[Array, "?batch time dim"],
+    array: Float[Array, "*rest time dim"],
     rel_noise_strength: float = 0.05,
     preserve_first: bool = False,
-    key: Array | int = jax.random.PRNGKey(0),
-) -> Float[Array, "? batch time dim"]:
+    key: Array | int = 0,
+) -> Float[Array, "*rest time dim"]:
     """
-    Adds Gaussian noise to given array, per dimension.
+    Adds Gaussian noise to given array per data dimension, which is assumed to be
+    along the last axis.
 
     The noise strength is set to be a multiple of the array standard deviation,
     calculated over the first two axes.
@@ -68,7 +69,7 @@ def add_noise(
     elif rel_noise_strength == 0:
         array_noised = array
     else:
-        std = jnp.std(coerce_to_3d(array), axis=(0, 1), keepdims=True)
+        std: Float[Array, " dim"] = jnp.std(array, axis=tuple(range(array.ndim - 1)))
 
         key = jax.random.PRNGKey(key)
         noise = jax.random.normal(key, array.shape) * std * rel_noise_strength
@@ -78,6 +79,21 @@ def add_noise(
             array_noised = array_noised.at[:, 0].set(array[:, 0])
 
     return array_noised
+
+
+def downsample(
+    data: Float[Array, "*rest time dim"], keep_every: int = 1
+) -> Float[Array, "*rest time dim//keep_every"]:
+    """
+    Downsample the given data array by an integer factor along the time dimension,
+    which is assumed to be along the second-to-last axis.
+    """
+    if keep_every <= 0:
+        raise ValueError("Downsampling factor must be an integer larger than 1.")
+    elif keep_every == 1:
+        return data
+    else:
+        return data[..., ::keep_every, :]
 
 
 def split_into_chunks(
