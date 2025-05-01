@@ -1,7 +1,12 @@
 import hydra
 import jax
 from dynamical_systems.dataset import TimeSeriesDataset
-from dynamics_discovery.preprocessing import add_noise, split_into_chunks, standardize
+from dynamics_discovery.preprocessing import (
+    add_noise,
+    downsample,
+    split_into_chunks,
+    standardize,
+)
 from dynamics_discovery.training.vanilla import VanillaTrainer
 from dynamics_discovery.utils.tree import tree_satisfy_float_precision
 from omegaconf import DictConfig, OmegaConf
@@ -19,20 +24,22 @@ def main(cfg: DictConfig) -> None:
             """Model and/or dataset does not conform to the 
             expected floating point precision!"""
         )
-
-    u_train = standardize(dataset.u[0, 30000:])
+    dataset = dataset[30000:]
+    t_train = dataset.t[0][:: cfg.preprocessing.downsample.keep_every]
+    u_train = downsample(dataset.u[0], cfg.preprocessing.downsample.keep_every)
+    u_train = add_noise(
+        u_train,
+        cfg.preprocessing.noise.rel_noise_strength,
+        cfg.preprocessing.noise.preserve_first,
+        cfg.preprocessing.noise.key,
+    )
+    u_train = standardize(u_train)
 
     t_train_batched, u_train_batched = jax.tree.map(
         lambda x: split_into_chunks(
             x, cfg.preprocessing.batch_length, cfg.preprocessing.overlap
         ),
-        (dataset.t[0, 30000:], u_train),
-    )
-    u_train_batched = add_noise(
-        u_train_batched,
-        cfg.preprocessing.noise.rel_noise_strength,
-        cfg.preprocessing.noise.preserve_first,
-        cfg.preprocessing.noise.key,
+        (t_train, u_train),
     )
 
     trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)

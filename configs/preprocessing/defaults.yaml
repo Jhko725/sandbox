@@ -1,5 +1,7 @@
 batch_length: 100
-overlap: 0
+overlap: -1
+downsample:
+  keep_every: 1
 noise:
   rel_noise_strength: 0.0
   preserve_first: false

@@ -91,7 +91,7 @@ class NeuralODE(AbstractDynamicsModel):
         **kwargs: Any,
     ) -> ODEState:
         del args
-        return self._diffeqsolve(t0, t1, u0, saveat=dfx.SaveAt(t1=True), **kwargs)
+        return self._diffeqsolve(t0, t1, u0, saveat=dfx.SaveAt(t1=True), **kwargs)[0]
 
     def solve(
         self, ts: Float[Array, " time"], u0: ODEState, args: Any = None, **kwargs

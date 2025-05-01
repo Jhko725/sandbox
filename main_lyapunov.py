@@ -9,8 +9,8 @@ import jax
 import jax.numpy as jnp
 import optax
 import wandb
-from dynamical_systems.dataset import TimeSeriesDataset
 from dynamical_systems.analysis import lyapunov_gr
+from dynamical_systems.dataset import TimeSeriesDataset
 from dynamics_discovery.preprocessing import split_into_chunks
 from jaxtyping import Array, Float
 from omegaconf import DictConfig, OmegaConf
