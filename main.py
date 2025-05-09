@@ -1,6 +1,6 @@
 import hydra
 import jax
-from dynamical_systems.dataset import TimeSeriesDataset
+from dynamics_discovery.dataset import TimeSeriesDataset
 from dynamics_discovery.preprocessing import (
     add_noise,
     downsample,
@@ -24,7 +24,6 @@ def main(cfg: DictConfig) -> None:
             """Model and/or dataset does not conform to the 
             expected floating point precision!"""
         )
-    dataset = dataset[30000:]
     t_train = dataset.t[0][:: cfg.preprocessing.downsample.keep_every]
     u_train = downsample(dataset.u[0], cfg.preprocessing.downsample.keep_every)
     u_train = add_noise(

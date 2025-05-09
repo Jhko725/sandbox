@@ -11,6 +11,9 @@ class AbstractODE(eqx.Module):
     """
 
     dim: eqx.AbstractVar[int]
+    default_solver: eqx.AbstractClassVar[dfx.AbstractAdaptiveSolver]
+    default_rtol: eqx.AbstractClassVar[float]
+    default_atol: eqx.AbstractClassVar[float]
 
     @abc.abstractmethod
     def rhs(self, t: Float[Array, ""], u: Float[Array, " {self.dim}"], args=None):
@@ -24,6 +27,32 @@ class AbstractODE(eqx.Module):
         cls = self.__class__.__name__
         args = ", ".join([f"{k}={v}" for k, v in vars(self).items()])
         return f"{cls}({args})"
+
+    def solve(
+        self,
+        t: Float[Array, " time"],
+        u0: Float[Array, " {self.dim}"],
+        solver=None,
+        rtol=None,
+        atol=None,
+        **diffeqsolve_kwargs,
+    ):
+        solver = self.default_solver if solver is None else solver
+        rtol = self.default_rtol if rtol is None else rtol
+        atol = self.default_atol if atol is None else atol
+
+        sol = dfx.diffeqsolve(
+            dfx.ODETerm(self.rhs),
+            solver,
+            t[0],
+            t[-1],
+            None,
+            u0,
+            saveat=dfx.SaveAt(ts=t),
+            stepsize_controller=dfx.PIDController(rtol=rtol, atol=atol),
+            **diffeqsolve_kwargs,
+        )
+        return sol.ys
 
 
 @eqx.filter_jit
