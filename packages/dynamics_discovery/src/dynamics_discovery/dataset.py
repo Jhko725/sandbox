@@ -9,10 +9,14 @@ import h5py
 import jax
 import jax.numpy as jnp
 import numpy as np
+from dynamical_systems.continuous import (
+    AbstractODE,
+)
+from dynamical_systems.utils import (
+    get_name,
+    is_arraylike_scalar,
+)
 from jaxtyping import Array, ArrayLike, Float
-
-from .continuous import AbstractODE, solve_ode
-from .utils import get_name, is_arraylike_scalar
 
 
 T = TypeVar("T", bound=ArrayLike)
@@ -80,9 +84,10 @@ class TimeSeriesDataset(eqx.Module, Sequence[T]):
         dynamics: AbstractODE,
         t: Float[T, "?batch time"],
         u0: Float[T, "batch dim"],
+        t_burnin: float = 0.0,
         solver: dfx.AbstractAdaptiveSolver = dfx.Tsit5(),
-        rtol: float = 1e-7,
-        atol: float = 1e-7,
+        rtol: float = 1e-8,
+        atol: float = 1e-8,
         max_steps: int | None = None,
         **diffeqsolve_kwargs,
     ):
@@ -91,8 +96,7 @@ class TimeSeriesDataset(eqx.Module, Sequence[T]):
 
         @eqx.filter_vmap
         def _solve_ode(u0_: Float[T, " dim"]):
-            return solve_ode(
-                dynamics,
+            return dynamics.solve(
                 t,
                 u0_,
                 solver,
