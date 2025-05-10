@@ -1,4 +1,4 @@
-batch_length: 100
+batch_length: 10
 overlap: -1
 downsample:
   keep_every: 1
