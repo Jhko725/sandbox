@@ -1,9 +1,60 @@
 from functools import partial
 
+import diffrax as dfx
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import scipy.spatial as scspatial
 from jaxtyping import Array, Float
+
+
+@eqx.filter_jit
+def jacobian(
+    ode,
+    t: Float[Array, " batch"],
+    u: Float[Array, "batch dim"],
+) -> Float[Array, "batch dim dim"]:
+    if hasattr(ode, "jacobian"):
+        jacobian_fn = ode.jacobian
+    else:
+
+        def _rhs(u_: Float[Array, " dim"], t_: Float[Array, ""]):
+            return ode.rhs(t_, u_, None)
+
+        def jacobian_fn(t_, u_):
+            return eqx.filter_jacrev(_rhs)(u_, t_)
+
+    return eqx.filter_vmap(jacobian_fn, in_axes=(0, 0))(t, u)
+
+
+def one_step_jacobian(
+    ode,
+    t: Float[Array, " batch"],
+    u: Float[Array, "batch dim"],
+    dt: float,
+    solver: dfx.AbstractAdaptiveSolver = dfx.Tsit5(),
+    rtol: float = 1e-7,
+    atol: float = 1e-7,
+    **diffeqsolve_kwargs,
+) -> Float[Array, "batch dim dim"]:
+    @eqx.filter_jacrev
+    def _step_jacobian(
+        u0: Float[Array, " dim"], t0: Float[Array, ""]
+    ) -> Float[Array, " dim"]:
+        sol = dfx.diffeqsolve(
+            dfx.ODETerm(ode.rhs),
+            solver,
+            t0,
+            t0 + dt,
+            None,
+            u0,
+            stepsize_controller=dfx.PIDController(rtol=rtol, atol=atol),
+            args=None,
+            **diffeqsolve_kwargs,
+        )
+        return sol.ys[0]
+
+    return eqx.filter_vmap(_step_jacobian, in_axes=(0, 0))(u, t)
 
 
 def empirical_one_step_jacobian(
