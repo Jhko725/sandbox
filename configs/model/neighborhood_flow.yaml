@@ -1,0 +1,8 @@
+defaults:
+  - neuralode@ode
+
+_target_: dynamics_discovery.models.neighborhood.NeuralNeighborhoodFlow
+ode: 
+  dim: ${...data.dim}
+use_seminorm: true
+second_order: true
