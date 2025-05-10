@@ -30,6 +30,8 @@ def colored_scatterplot(
             raise ValueError("Dimension of the data arrays must either be 2 or 3")
 
     fig, axes = plt.subplots(1, n_plots, figsize=figsize, subplot_kw=subplot_kw)
+    if not isinstance(axes, np.ndarray):
+        axes = np.array([axes])
 
     if "vmax" not in scatter_kwargs:
         scatter_kwargs["vmax"] = max([np.max(c) for c in colors])

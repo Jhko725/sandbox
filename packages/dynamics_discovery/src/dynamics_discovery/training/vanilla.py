@@ -39,24 +39,24 @@ class VanillaTrainer:
         self.logger = wandb.init(entity=wandb_entity, project=wandb_project)
 
     def make_step_fn(self) -> Callable:
-        loss_grad_fn = eqx.filter_value_and_grad(self.loss_fn)
+        loss_grad_fn = eqx.filter_value_and_grad(self.loss_fn, has_aux=True)
 
         @eqx.filter_jit
-        def _step(model, t_data, u_data, args, opt_state):
-            loss, grads = loss_grad_fn(model, t_data, u_data, args)
+        def _step(model, batch, args, opt_state, **kwargs):
+            (loss, log_dict), grads = loss_grad_fn(model, batch, args, **kwargs)
             updates, opt_state = self.optimizer.update(grads, opt_state)
             model = eqx.apply_updates(model, updates)
-            return loss, model, opt_state
+            return loss, log_dict, model, opt_state
 
         return _step
 
     def train(
         self,
         model: AbstractDynamicsModel,
-        t_train_batched,
-        u_train_batched,
+        batch,
         *,
         config: dict | None = None,
+        **kwargs,
     ):
         opt_state = self.optimizer.init(eqx.filter(model, eqx.is_inexact_array))
         step_fn = self.make_step_fn()
@@ -67,10 +67,11 @@ class VanillaTrainer:
 
             loss_history = []
             for epoch in range(self.max_epochs):
-                loss, model, opt_state = step_fn(
-                    model, t_train_batched, u_train_batched, None, opt_state
+                loss, log_dict, model, opt_state = step_fn(
+                    model, batch, None, opt_state, **kwargs
                 )
-                logger.log({"loss": loss, "epoch": epoch}, step=epoch)
+                logger.log(log_dict, step=epoch)
+                logger.log({"train_loss": loss, "epoch": epoch}, step=epoch)
                 print(f"{epoch=}, {loss=}")
                 loss_history.append(loss.item())
 

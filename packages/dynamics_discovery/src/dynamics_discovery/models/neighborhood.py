@@ -1,4 +1,6 @@
 from dataclasses import replace
+from functools import partial
+from typing import Any
 
 import diffrax as dfx
 import equinox as eqx
@@ -6,8 +8,10 @@ import jax
 import jax.numpy as jnp
 import lineax.internal as lxi
 import scipy.spatial as scspatial
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, PyTree
 
+from ..custom_types import FloatScalar
+from ..loss_functions import AbstractDynamicsLoss
 from .neuralode import NeuralODE
 
 
@@ -108,3 +112,41 @@ class NeuralNeighborhoodFlow(eqx.Module):
             **kwargs,
         )
         return sol.ys
+
+
+class NeighborhoodMSELoss(AbstractDynamicsLoss):
+    def __call__(
+        self,
+        model: NeuralNeighborhoodFlow,
+        batch: PyTree[Float[Array, "batch ..."]],
+        args: Any = None,
+        **kwargs: Any,
+    ) -> FloatScalar:
+        t_data: Float[Array, "batch time_batch"]
+        u_data: Float[Array, "batch time_batch dim"]
+        du_data: Float[Array, "batch neighbors time_batch dim"]
+        t_data, u_data, du_data = batch
+
+        @partial(eqx.filter_vmap, in_axes=(0, 0, 0))
+        @partial(eqx.filter_vmap, in_axes=(None, None, 0), out_axes=(None, 0))
+        def _solve(
+            t: Float[Array, " time_batch"],
+            u0: Float[Array, " dim"],
+            du0: Float[Array, " dim"],
+        ):
+            return model.solve(
+                t,
+                (u0, du0),
+                **kwargs,
+            )
+
+        n_neighbors = du_data.shape[1]
+        u_pred, du_pred = _solve(t_data, u_data[:, 0], du_data[:, :, 0])
+        mse_total = jnp.mean((u_pred - u_data) ** 2)
+        u_nn_pred = jnp.expand_dims(u_pred, 1) + du_pred
+        u_nn_data = jnp.expand_dims(u_data, 1) + du_data
+        mse_neighbors = jnp.mean((u_nn_pred - u_nn_data) ** 2)
+        return (mse_total + n_neighbors * mse_neighbors) / (n_neighbors + 1), {
+            "mse": mse_total,
+            "mse_neighbors": mse_neighbors,
+        }

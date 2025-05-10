@@ -5,7 +5,7 @@ from typing import Any
 
 import equinox as eqx
 import jax.numpy as jnp
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, PyTree
 
 from .custom_types import FloatScalar
 from .models.abstract import AbstractDynamicsModel
@@ -21,8 +21,7 @@ class AbstractDynamicsLoss(eqx.Module, strict=True):
     def __call__(
         self,
         model: AbstractDynamicsModel,
-        t_data: Float[Array, "batch time"],
-        u_data: Float[Array, "batch time dim"],
+        batch: PyTree[Float[Array, "batch ..."]],
         args: Any,
         **kwargs: Any,
     ) -> FloatScalar: ...
@@ -32,18 +31,20 @@ class MSELoss(AbstractDynamicsLoss):
     def __call__(
         self,
         model: AbstractDynamicsModel,
-        t_data: Float[Array, " batch time"],
-        u_data: Float[Array, " batch time dim"],
+        batch: PyTree[Float[Array, "batch ..."]],
         args: Any = None,
         **kwargs: Any,
     ) -> FloatScalar:
+        t_data, u_data = batch
+
         @partial(eqx.filter_vmap, in_axes=(0, 0))
         def _mse(t_data_: Float[Array, " time"], u_data_):
             u_pred = model.solve(t_data_, u_data_[0], args, **kwargs)
             return jnp.mean((u_pred - u_data_) ** 2)
 
         mse_batch = _mse(t_data, u_data)
-        return jnp.mean(mse_batch)
+        mse_total = jnp.mean(mse_batch)
+        return mse_total, {"mse": mse_total}
 
 
 class JacobianMatchingMSE(AbstractDynamicsLoss):
