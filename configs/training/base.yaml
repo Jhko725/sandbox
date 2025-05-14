@@ -4,7 +4,7 @@ optimizer:
   learning_rate: 2e-4
 loss_fn:
   _target_: dynamics_discovery.loss_functions.MSELoss
-  batch_size: None
+  batch_size: null
 max_epochs: 5000
 savedir: ./results/${..data.name}/
 savename: len=${..preprocessing.batch_length}_downsample=${preprocessing.downsample.keep_every}_noise=${..preprocessing.noise.rel_noise_strength}_key=${..model.key}.eqx

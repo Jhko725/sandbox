@@ -40,6 +40,7 @@ def main(cfg: DictConfig) -> None:
         ),
         (t_train, u_train),
     )
+    del dataset
 
     trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)

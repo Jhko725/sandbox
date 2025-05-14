@@ -49,6 +49,7 @@ def main(cfg: DictConfig) -> None:
         num_neighbors=cfg.neighborhood.num_neighbors,
         train_length=cfg.preprocessing.batch_length,
     )
+    del dataset
 
     trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)

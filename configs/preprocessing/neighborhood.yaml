@@ -1,4 +1,0 @@
-defaults:
-  - base
-
-num_neighbors: 25
