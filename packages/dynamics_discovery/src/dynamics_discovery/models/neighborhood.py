@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import lineax.internal as lxi
 import scipy.spatial as scspatial
 from jaxtyping import Array, Float, PyTree
+from ott.utils import batched_vmap
 
 from ..custom_types import FloatScalar
 from ..loss_functions import AbstractDynamicsLoss
@@ -115,6 +116,8 @@ class NeuralNeighborhoodFlow(eqx.Module):
 
 
 class NeighborhoodMSELoss(AbstractDynamicsLoss):
+    batch_size: int | None = None
+
     def __call__(
         self,
         model: NeuralNeighborhoodFlow,
@@ -127,7 +130,9 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
         du_data: Float[Array, "batch neighbors time_batch dim"]
         t_data, u_data, du_data = batch
 
-        @partial(eqx.filter_vmap, in_axes=(0, 0, 0))
+        batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
+
+        @partial(batched_vmap, in_axes=(0, 0, 0), batch_size=batch_size)
         @partial(eqx.filter_vmap, in_axes=(None, None, 0), out_axes=(None, 0))
         def _solve(
             t: Float[Array, " time_batch"],

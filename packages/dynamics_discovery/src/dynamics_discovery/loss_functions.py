@@ -6,6 +6,7 @@ from typing import Any
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float, PyTree
+from ott.utils import batched_vmap
 
 from .custom_types import FloatScalar
 from .models.abstract import AbstractDynamicsModel
@@ -28,6 +29,8 @@ class AbstractDynamicsLoss(eqx.Module, strict=True):
 
 
 class MSELoss(AbstractDynamicsLoss):
+    batch_size: int | None = None
+
     def __call__(
         self,
         model: AbstractDynamicsModel,
@@ -37,7 +40,9 @@ class MSELoss(AbstractDynamicsLoss):
     ) -> FloatScalar:
         t_data, u_data = batch
 
-        @partial(eqx.filter_vmap, in_axes=(0, 0))
+        batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
+
+        @partial(batched_vmap, in_axes=(0, 0), batch_size=batch_size)
         def _mse(t_data_: Float[Array, " time"], u_data_):
             u_pred = model.solve(t_data_, u_data_[0], args, **kwargs)
             return jnp.mean((u_pred - u_data_) ** 2)

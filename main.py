@@ -45,7 +45,7 @@ def main(cfg: DictConfig) -> None:
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
 
     model, _ = trainer.train(
-        model, t_train_batched, u_train_batched, config=config_dict
+        model, (t_train_batched, u_train_batched), config=config_dict
     )
     trainer.save_model(model, config_dict["model"])
 

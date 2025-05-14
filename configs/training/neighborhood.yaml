@@ -4,8 +4,9 @@ optimizer:
   learning_rate: 2e-4
 loss_fn:
   _target_: dynamics_discovery.models.neighborhood.NeighborhoodMSELoss
+  batch_size: None
 max_epochs: 2000
-savedir: ./results/lorenz63_neighborhood/
+savedir: ./results/${..data.name}/neighborhood
 savename: len=${..preprocessing.batch_length}_num_neighbors=${preprocessing.num_neighbors}_noise=${..preprocessing.noise.rel_noise_strength}_key=${..model.ode.key}.eqx
 wandb_entity: jhko725
 wandb_project: neighborhood

@@ -1,0 +1,25 @@
+defaults:
+  - model: neuralode
+  - data: lorenz63
+  - preprocessing: base
+  - training: vanilla
+  - override hydra/launcher: submitit_slurm
+  - _self_
+
+training:
+  loss_fn:
+    _target_: dynamics_discovery.models.neighborhood.NeighborhoodMSELoss
+  savedir: ./results/${data.name}/neighborhood/
+
+neighborhood:
+  num_neighbors: 25
+  use_seminorm: true
+  second_order: true
+
+hydra:
+  launcher: 
+    timeout_min: 900
+    tasks_per_node: 1
+    gpus_per_node: 1
+
+enable_x64: true
