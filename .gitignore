@@ -9,6 +9,7 @@ outputs/
 wandb/
 data/
 results/
+results_analysis/
 multirun/
 # Virtual environments
 .venv

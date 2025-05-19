@@ -20,5 +20,5 @@ def plot_line_and_band(
     else:
         width_lower, width_upper = y_widths, y_widths
 
-    ax.fill_between(x, y - width_lower, y + width_upper, alpha=alpha_band)
+    ax.fill_between(x, y - width_lower, y + width_upper, color=color, alpha=alpha_band)
     return ax

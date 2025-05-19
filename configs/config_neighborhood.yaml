@@ -9,11 +9,13 @@ defaults:
 training:
   loss_fn:
     _target_: dynamics_discovery.models.neighborhood.NeighborhoodMSELoss
-  savedir: ./results/${data.name}/neighborhood/
+    weight: 1.0
+  savedir: ./results/${data.name}_final/neighborhood/
+  savename: len=${preprocessing.batch_length}_neighbors=${neighborhood.num_neighbors}_weight=${training.loss_fn.weight}_noise=${preprocessing.noise.rel_noise_strength}_key=${model.key}.eqx
 
 neighborhood:
   num_neighbors: 25
-  use_seminorm: true
+  use_seminorm: false
   second_order: false
   use_taylor_mode: false
 

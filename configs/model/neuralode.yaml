@@ -2,7 +2,7 @@ defaults:
   - base
 
 _target_: dynamics_discovery.models.NeuralODE
-width: 32
+width: 64
 depth: 3
 activation: 
   _target_: hydra.utils.get_method

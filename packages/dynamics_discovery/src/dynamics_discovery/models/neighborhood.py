@@ -151,6 +151,7 @@ class NeuralNeighborhoodFlow(eqx.Module):
 
 class NeighborhoodMSELoss(AbstractDynamicsLoss):
     batch_size: int | None = None
+    weight: float = 1.0
 
     def __call__(
         self,
@@ -184,7 +185,13 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
         u_nn_pred = jnp.expand_dims(u_pred, 2) + du_pred
         u_nn_data = jnp.expand_dims(u_data, 2) + du_data
         mse_neighbors = jnp.mean((u_nn_pred - u_nn_data) ** 2)
-        return (mse_total + n_neighbors * mse_neighbors) / (n_neighbors + 1), {
+
+        return (mse_total + self.weight * mse_neighbors) / (1 + self.weight), {
             "mse": mse_total,
             "mse_neighbors": mse_neighbors,
         }
+
+        # return (mse_total + n_neighbors * mse_neighbors) / (n_neighbors + 1), {
+        #     "mse": mse_total,
+        #     "mse_neighbors": mse_neighbors,
+        # }
