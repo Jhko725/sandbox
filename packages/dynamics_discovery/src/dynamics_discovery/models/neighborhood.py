@@ -2,13 +2,14 @@ from dataclasses import replace
 from functools import partial
 from typing import Any
 
+import numpy as np
 import diffrax as dfx
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jax.experimental import jet
 import lineax.internal as lxi
-import scipy.spatial as scspatial
+from sklearn.neighbors import NearestNeighbors
 from jaxtyping import Array, Float, PyTree
 from ott.utils import batched_vmap
 
@@ -23,10 +24,14 @@ def create_neighborhood_dataset(
     *,
     num_neighbors: int = 25,
     train_length: int = 2,
+    min_radius: float = 0.05,
+    max_radius: float = 0.5,
+    adjacent_exclusion_threshold: int = 5,
 ) -> tuple[
     Float[Array, " time-train_length train_length"],
     Float[Array, "time-train_length train_length dim"],
     Float[Array, "time-train_length train_length num_neighbors dim"],
+    Float[Array, "time-train_length num_neighbors"],
 ]:
     """
     Given time series data (t, u), create dataset that can be used to train the
@@ -34,10 +39,35 @@ def create_neighborhood_dataset(
 
     """
     u_query = u[:-train_length]
-    kdtree = scspatial.KDTree(u_query)
-    idx_nn = jnp.asarray(
-        kdtree.query(u_query, k=num_neighbors + 1)[1][:, 1:], dtype=jnp.int_
+
+    estimator = NearestNeighbors(radius=max_radius)
+    estimator.fit(u_query)
+
+    neigh_dists, neigh_inds = estimator.radius_neighbors(
+        u_query, max_radius, sort_results=True
     )
+
+    neigh_final = []
+    lens = []
+    for i, (dists, indices) in enumerate(zip(neigh_dists, neigh_inds)):
+        criteria = np.logical_and(
+            dists >= min_radius, np.abs(indices - i) > adjacent_exclusion_threshold
+        )
+        selected_inds = indices[criteria]
+        lens.append(len(selected_inds))
+
+        if len(selected_inds) >= num_neighbors:
+            selected_inds = selected_inds[-num_neighbors:]
+        else:
+            selected_inds = np.pad(
+                selected_inds,
+                (0, num_neighbors - len(selected_inds)),
+                constant_values=i,
+            )
+        neigh_final.append(selected_inds)
+
+    lens = jnp.clip(jnp.asarray(lens, dtype=jnp.int_), max=num_neighbors)
+    idx_nn = jnp.asarray(neigh_final, dtype=jnp.int_)
 
     def _slice(x, start_index: int):
         return jax.lax.dynamic_slice_in_dim(x, start_index, train_length, axis=0)
@@ -47,7 +77,13 @@ def create_neighborhood_dataset(
         t_slice = _slice(t, i)
         u_slice = _slice(u, i)
         u_nn_slice = jax.vmap(_slice, in_axes=(None, 0), out_axes=1)(u, idx_nn[i])
-        return i + 1, (t_slice, u_slice, u_nn_slice - jnp.expand_dims(u_slice, 1))
+        weight = jnp.arange(num_neighbors) < lens[i]
+        return i + 1, (
+            t_slice,
+            u_slice,
+            u_nn_slice - jnp.expand_dims(u_slice, 1),
+            weight,
+        )
 
     _, dataset = jax.lax.scan(_inner, 0, length=len(t) - train_length)
     return dataset
@@ -163,7 +199,8 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
         t_data: Float[Array, "batch time_batch"]
         u_data: Float[Array, "batch time_batch dim"]
         du_data: Float[Array, "batch time_batch neighbors dim"]
-        t_data, u_data, du_data = batch
+        weights: Float[Array, "batch neighbors"]
+        t_data, u_data, du_data, weights = batch
 
         batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
 
@@ -179,12 +216,16 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
                 **kwargs,
             )
 
-        n_neighbors = du_data.shape[1]
         u_pred, du_pred = _solve(t_data, u_data[:, 0], du_data[:, 0])
         mse_total = jnp.mean((u_pred - u_data) ** 2)
         u_nn_pred = jnp.expand_dims(u_pred, 2) + du_pred
         u_nn_data = jnp.expand_dims(u_data, 2) + du_data
-        mse_neighbors = jnp.mean((u_nn_pred - u_nn_data) ** 2)
+        mse_neighbors = jnp.mean(
+            jnp.sum(
+                jnp.mean((u_nn_pred - u_nn_data) ** 2, axis=(1, 3)) * weights, axis=-1
+            )
+            / jnp.sum(weights, axis=-1)
+        )
 
         return (mse_total + self.weight * mse_neighbors) / (1 + self.weight), {
             "mse": mse_total,
