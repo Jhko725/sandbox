@@ -11,9 +11,9 @@ from jaxtyping import Array, Float
 @eqx.filter_jit
 def jacobian(
     ode,
-    t: Float[Array, " batch"],
-    u: Float[Array, "batch dim"],
-) -> Float[Array, "batch dim dim"]:
+    t: Float[Array, ""],
+    u: Float[Array, " dim"],
+) -> Float[Array, "dim dim"]:
     if hasattr(ode, "jacobian"):
         jacobian_fn = ode.jacobian
     else:
@@ -24,7 +24,7 @@ def jacobian(
         def jacobian_fn(t_, u_):
             return eqx.filter_jacrev(_rhs)(u_, t_)
 
-    return eqx.filter_vmap(jacobian_fn, in_axes=(0, 0))(t, u)
+    return jacobian_fn(t, u)
 
 
 def one_step_jacobian(

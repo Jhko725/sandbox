@@ -1,3 +1,5 @@
 name: lorenz63
 dim: 3
 loadpath: ./data/lorenz63.hdf5
+ode:
+  _target_: dynamical_systems.continuous.Lorenz63

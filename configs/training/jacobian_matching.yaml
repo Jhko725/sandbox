@@ -1,0 +1,11 @@
+defaults:
+  - base
+
+_target_: dynamics_discovery.training.VanillaTrainer
+loss_fn:
+  _target_: dynamics_discovery.loss_functions.JacobianMatchingMSE
+  ode_true: ${data.ode}
+  jacobian_weight: 1
+  batch_size: null
+savedir: ./results/${..data.name}_final/jacobian/
+savename: len=${preprocessing.batch_length}_jacobian_weight=${training.loss_fn.jacobian_weight}_noise=${preprocessing.noise.rel_noise_strength}_key=${model.key}.eqx

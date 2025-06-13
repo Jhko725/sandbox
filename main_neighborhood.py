@@ -48,6 +48,7 @@ def main(cfg: DictConfig) -> None:
         u_train,
         num_neighbors=cfg.neighborhood.num_neighbors,
         train_length=cfg.preprocessing.batch_length,
+        train_length_neighbors=cfg.neighborhood.train_length_neighbors,
         max_radius=cfg.neighborhood.max_radius,
         min_radius=cfg.neighborhood.min_radius,
         adjacent_exclusion_threshold=cfg.neighborhood.adjacent_exclusion_threshold,

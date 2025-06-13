@@ -24,13 +24,14 @@ def create_neighborhood_dataset(
     *,
     num_neighbors: int = 25,
     train_length: int = 2,
+    train_length_neighbors: int = 2,
     min_radius: float = 0.05,
     max_radius: float = 0.5,
     adjacent_exclusion_threshold: int = 5,
 ) -> tuple[
     Float[Array, " time-train_length train_length"],
     Float[Array, "time-train_length train_length dim"],
-    Float[Array, "time-train_length train_length num_neighbors dim"],
+    Float[Array, "time-train_length train_length_neighbors num_neighbors dim"],
     Float[Array, "time-train_length num_neighbors"],
 ]:
     """
@@ -38,13 +39,12 @@ def create_neighborhood_dataset(
     NeuralNeighborhoodFlow model.
 
     """
-    u_query = u[:-train_length]
 
     estimator = NearestNeighbors(radius=max_radius)
-    estimator.fit(u_query)
+    estimator.fit(u[:-train_length_neighbors])
 
     neigh_dists, neigh_inds = estimator.radius_neighbors(
-        u_query, max_radius, sort_results=True
+        u[:-train_length], max_radius, sort_results=True
     )
 
     neigh_final = []
@@ -70,18 +70,20 @@ def create_neighborhood_dataset(
     idx_nn = jnp.asarray(neigh_final, dtype=jnp.int_)
 
     def _slice(x, start_index: int):
-        return jax.lax.dynamic_slice_in_dim(x, start_index, train_length, axis=0)
+        return jax.lax.dynamic_slice_in_dim(
+            x, start_index, train_length_neighbors, axis=0
+        )
 
     def _inner(i: int, arg=None):
         del arg
-        t_slice = _slice(t, i)
-        u_slice = _slice(u, i)
+        t_slice = jax.lax.dynamic_slice_in_dim(t, i, train_length, axis=0)
+        u_slice = jax.lax.dynamic_slice_in_dim(u, i, train_length, axis=0)
         u_nn_slice = jax.vmap(_slice, in_axes=(None, 0), out_axes=1)(u, idx_nn[i])
         weight = jnp.arange(num_neighbors) < lens[i]
         return i + 1, (
             t_slice,
             u_slice,
-            u_nn_slice - jnp.expand_dims(u_slice, 1),
+            u_nn_slice - jnp.expand_dims(u_slice[:train_length_neighbors], 1),
             weight,
         )
 
@@ -198,15 +200,16 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
     ) -> FloatScalar:
         t_data: Float[Array, "batch time_batch"]
         u_data: Float[Array, "batch time_batch dim"]
-        du_data: Float[Array, "batch time_batch neighbors dim"]
+        du_data: Float[Array, "batch time_batch_neighbors neighbors dim"]
         weights: Float[Array, "batch neighbors"]
         t_data, u_data, du_data, weights = batch
 
         batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
+        len_neighbors = du_data.shape[1]
 
         @partial(batched_vmap, in_axes=(0, 0, 0), batch_size=batch_size)
         def _solve(
-            t: Float[Array, " time_batch"],
+            t: Float[Array, " time_batch_neighbors"],
             u0: Float[Array, " dim"],
             du0: Float[Array, " neighbors dim"],
         ):
@@ -216,10 +219,21 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
                 **kwargs,
             )
 
-        u_pred, du_pred = _solve(t_data, u_data[:, 0], du_data[:, 0])
-        mse_total = jnp.mean((u_pred - u_data) ** 2)
+        @partial(batched_vmap, in_axes=(0, 0), batch_size=batch_size)
+        def _solve_ode(
+            t: Float[Array, " {time_batch-time_batch_neighbors}"],
+            u0: Float[Array, " dim"],
+        ):
+            return model.ode.solve(
+                t,
+                u0,
+                **kwargs,
+            )
+
+        u_pred, du_pred = _solve(t_data[:, :len_neighbors], u_data[:, 0], du_data[:, 0])
+
         u_nn_pred = jnp.expand_dims(u_pred, 2) + du_pred
-        u_nn_data = jnp.expand_dims(u_data, 2) + du_data
+        u_nn_data = jnp.expand_dims(u_data[:, :len_neighbors], 2) + du_data
         mse_neighbors = jnp.mean(
             jnp.sum(
                 jnp.mean((u_nn_pred - u_nn_data) ** 2, axis=(1, 3)) * weights, axis=-1
@@ -227,6 +241,9 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
             / jnp.sum(weights, axis=-1)
         )
 
+        u_pred_rest = _solve_ode(t_data[:, len_neighbors - 1 :], u_pred[:, -1])
+        u_pred_total = jnp.concatenate((u_pred, u_pred_rest[:, 1:]), axis=1)
+        mse_total = jnp.mean((u_pred_total - u_data) ** 2)
         return (mse_total + self.weight * mse_neighbors) / (1 + self.weight), {
             "mse": mse_total,
             "mse_neighbors": mse_neighbors,
