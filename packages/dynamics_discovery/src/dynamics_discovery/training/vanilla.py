@@ -15,7 +15,8 @@ from ..models.abstract import AbstractDynamicsModel
 class VanillaTrainer:
     optimizer: optax.GradientTransformation
     max_epochs: int
-    savepath: Path
+    savedir: Path
+    savename: str
     logger: wandb.sdk.wandb_run.Run
 
     def __init__(
@@ -32,9 +33,8 @@ class VanillaTrainer:
         self.loss_fn = loss_fn
         self.max_epochs = max_epochs
 
-        savedir = Path(savedir)
-        savedir.mkdir(parents=True, exist_ok=True)
-        self.savepath = Path(savedir) / savename
+        self.savedir = savedir
+        self.savename = savename
 
         self.logger = wandb.init(entity=wandb_entity, project=wandb_project)
 
@@ -76,6 +76,19 @@ class VanillaTrainer:
                 loss_history.append(loss.item())
 
         return model, jnp.asarray(loss_history)
+
+    @property
+    def savedir(self) -> Path:
+        return self.__savedir
+
+    @savedir.setter
+    def savedir(self, value: Path | str):
+        self.__savedir = Path(value)
+        self.__savedir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def savepath(self) -> Path:
+        return self.savedir / self.savename
 
     def save_model(
         self,

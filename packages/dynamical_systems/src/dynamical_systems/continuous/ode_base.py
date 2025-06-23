@@ -28,6 +28,18 @@ class AbstractODE(eqx.Module):
         args = ", ".join([f"{k}={v}" for k, v in vars(self).items()])
         return f"{cls}({args})"
 
+    @property
+    def stepsize_controller(self):
+        return dfx.PIDController(rtol=self.default_rtol, atol=self.default_atol)
+
+    @property
+    def solver(self):
+        return self.default_solver
+
+    @property
+    def dt0(self):
+        return None
+
     def solve(
         self,
         t: Float[Array, " time"],

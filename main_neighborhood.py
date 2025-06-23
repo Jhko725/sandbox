@@ -56,6 +56,8 @@ def main(cfg: DictConfig) -> None:
     del dataset
 
     trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
+    if cfg.neighborhood.second_order:
+        trainer.savedir = trainer.savedir / "second_order/"
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
 
     model, _ = trainer.train(model, batch, config=config_dict, max_steps=1024)

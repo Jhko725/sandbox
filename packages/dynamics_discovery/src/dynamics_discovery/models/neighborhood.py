@@ -57,7 +57,7 @@ def create_neighborhood_dataset(
         lens.append(len(selected_inds))
 
         if len(selected_inds) >= num_neighbors:
-            selected_inds = selected_inds[-num_neighbors:]
+            selected_inds = selected_inds[:num_neighbors]
         else:
             selected_inds = np.pad(
                 selected_inds,
@@ -238,7 +238,9 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
             jnp.sum(
                 jnp.mean((u_nn_pred - u_nn_data) ** 2, axis=(1, 3)) * weights, axis=-1
             )
-            / jnp.sum(weights, axis=-1)
+            # / jnp.clip(
+            #     jnp.sum(weights, axis=-1), min=1
+            # )  # Trick do avoid divide by zero
         )
 
         u_pred_rest = _solve_ode(t_data[:, len_neighbors - 1 :], u_pred[:, -1])
