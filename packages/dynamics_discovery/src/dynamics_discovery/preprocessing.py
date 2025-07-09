@@ -2,6 +2,8 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Shaped
 
+from dynamical_systems.transforms import ShiftScaleTransform
+
 
 def coerce_to_3d(x: Array) -> Shaped[Array, "?batch dim1 dim2"]:
     n_dim = x.ndim
@@ -14,11 +16,7 @@ def coerce_to_3d(x: Array) -> Shaped[Array, "?batch dim1 dim2"]:
 
 def standardize(
     array: Float[Array, "?batch time dim"],
-    other: Float[Array, "?batch_other time dim"] | None = None,
-    axis: int = -2,
-) -> tuple[
-    Float[Array, "?batch time dim"], Float[Array, "?batch_other time dim"] | None
-]:
+) -> tuple[Float[Array, "?batch time dim"], ShiftScaleTransform]:
     """
     Standardizes a given 2D or 3D array along some axis.
     For 2D arrays, axis specifies the axis over which the mean and standard deviations
@@ -26,24 +24,15 @@ def standardize(
     For 3D arrays, the mean and standard deviation reductions are additionally performed
     over the leading axis, which is assumed to correspond to the batch dimension.
 
-    The argument `other` is used to pass in an additional array, which is standardized
-    using the statistics of the first argument `array`.
-
-    This is useful when preprocessing train and validation/test sets for model training,
-    as using the combined statistics for both train and validation/test sets for
-    standardization leads to data leakage.
+    The function additionally return a transform object, which can be used to further
+    standardize other data, or recover the original data from the standardized results.
     """
-    orig_shape = array.shape
-    array = coerce_to_3d(array)
-    mean = jnp.mean(array, axis=(0, axis), keepdims=True)
-    std = jnp.std(array, axis=(0, axis), keepdims=True)
+    array_ = jnp.reshape(array, (-1, array.shape[-1]))
+    mean = jnp.mean(array_, axis=0)
+    std = jnp.std(array_, axis=0)
 
-    arr_stdized = jnp.reshape((array - mean) / std, orig_shape)
-    if other is None:
-        return arr_stdized
-    else:
-        othr_stdized = jnp.reshape((other - mean) / std, other.shape)
-        return arr_stdized, othr_stdized
+    transform = ShiftScaleTransform(mean, std)
+    return transform(array), transform
 
 
 def add_noise(

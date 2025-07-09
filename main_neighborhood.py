@@ -13,6 +13,7 @@ from dynamics_discovery.preprocessing import (
 from dynamics_discovery.training.vanilla import VanillaTrainer
 from dynamics_discovery.utils.tree import tree_satisfy_float_precision
 from omegaconf import DictConfig, OmegaConf
+import scipy.signal as scsignal
 
 
 @hydra.main(
@@ -41,7 +42,9 @@ def main(cfg: DictConfig) -> None:
         cfg.preprocessing.noise.preserve_first,
         cfg.preprocessing.noise.key,
     )
-    u_train = standardize(u_train)
+    u_train, _ = standardize(u_train)
+
+    u_train = scsignal.savgol_filter(u_train, window_length=7, polyorder=3, axis=0)
 
     batch = create_neighborhood_dataset(
         t_train,

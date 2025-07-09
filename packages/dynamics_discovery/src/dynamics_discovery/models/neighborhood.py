@@ -41,10 +41,10 @@ def create_neighborhood_dataset(
     """
 
     estimator = NearestNeighbors(radius=max_radius)
-    estimator.fit(u[:-train_length_neighbors])
+    estimator.fit(u[: -train_length_neighbors + 1])
 
     neigh_dists, neigh_inds = estimator.radius_neighbors(
-        u[:-train_length], max_radius, sort_results=True
+        u[: -train_length + 1], max_radius, sort_results=True
     )
 
     neigh_final = []
@@ -87,7 +87,7 @@ def create_neighborhood_dataset(
             weight,
         )
 
-    _, dataset = jax.lax.scan(_inner, 0, length=len(t) - train_length)
+    _, dataset = jax.lax.scan(_inner, 0, length=idx_nn.shape[0])
     return dataset
 
 

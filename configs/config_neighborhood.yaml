@@ -10,14 +10,14 @@ training:
   loss_fn:
     _target_: dynamics_discovery.models.neighborhood.NeighborhoodMSELoss
     weight: 1.0
-  savedir: ./results/${data.name}_final/neighborhood_revised
+  savedir: ./results/${data.name}_final/neighborhood_revised/smoothing
   savename: len=${preprocessing.batch_length}_neighbors=${neighborhood.num_neighbors}_weight=${training.loss_fn.weight}_noise=${preprocessing.noise.rel_noise_strength}_key=${model.key}.eqx
 
 neighborhood:
   num_neighbors: 25
-  train_length_neighbors: 10
-  max_radius: 1.0
-  min_radius: 0.6
+  train_length_neighbors: 5
+  max_radius: 0.6
+  min_radius: 0.4
   adjacent_exclusion_threshold: 5
   use_seminorm: false
   second_order: false
