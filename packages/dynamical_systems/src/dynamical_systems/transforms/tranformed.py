@@ -1,5 +1,3 @@
-from collections.abc import Callable
-
 import equinox as eqx
 
 from ..continuous import AbstractODE
@@ -21,15 +19,3 @@ class TransformedODE(AbstractODE):
     @property
     def dim(self):
         return self.ode.dim
-
-    @property
-    def default_solver(self):
-        return self.ode.default_solver
-
-    @property
-    def default_rtol(self):
-        return self.ode.default_rtol
-
-    @property
-    def default_atol(self):
-        return self.ode.default_rtol

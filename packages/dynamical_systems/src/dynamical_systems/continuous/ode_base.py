@@ -8,12 +8,13 @@ from jaxtyping import Array, Float
 class AbstractODE(eqx.Module):
     """Abstract base class for dynamical systems governed by ordinary differential
     equations.
+
+    Ordinary differential equations represented by subclasses of AbstractODE are meant
+    to be numerically solved using either `diffrax.diffeqsolve` or the `solve_ode`
+    function defined in this module.
     """
 
     dim: eqx.AbstractVar[int]
-    default_solver: eqx.AbstractClassVar[dfx.AbstractAdaptiveSolver]
-    default_rtol: eqx.AbstractClassVar[float]
-    default_atol: eqx.AbstractClassVar[float]
 
     @abc.abstractmethod
     def rhs(self, t: Float[Array, ""], u: Float[Array, " {self.dim}"], args=None):
@@ -28,70 +29,44 @@ class AbstractODE(eqx.Module):
         args = ", ".join([f"{k}={v}" for k, v in vars(self).items()])
         return f"{cls}({args})"
 
-    @property
-    def stepsize_controller(self):
-        return dfx.PIDController(rtol=self.default_rtol, atol=self.default_atol)
 
-    @property
-    def solver(self):
-        return self.default_solver
-
-    @property
-    def dt0(self):
-        return None
-
-    def solve(
-        self,
-        t: Float[Array, " time"],
-        u0: Float[Array, " {self.dim}"],
-        solver=None,
-        rtol=None,
-        atol=None,
-        **diffeqsolve_kwargs,
-    ):
-        solver = self.default_solver if solver is None else solver
-        rtol = self.default_rtol if rtol is None else rtol
-        atol = self.default_atol if atol is None else atol
-
-        sol = dfx.diffeqsolve(
-            dfx.ODETerm(self.rhs),
-            solver,
-            t[0],
-            t[-1],
-            None,
-            u0,
-            saveat=dfx.SaveAt(ts=t),
-            stepsize_controller=dfx.PIDController(rtol=rtol, atol=atol),
-            **diffeqsolve_kwargs,
-        )
-        return sol.ys
+def _infer_stepsize_controller(dt0, rtol, atol):
+    match dt0, rtol, atol:
+        case _, float(), float():
+            return dfx.PIDController(rtol, atol)
+        case float(), None, None:
+            return dfx.ConstantStepSize()
+        case _:
+            raise ValueError("""Unexpected combination of arguments: either 
+                             (rtol, atol) = (float, float) or 
+                             dt0 = float and (rtol, atol) = (None, None)""")
 
 
 @eqx.filter_jit
 def solve_ode(
     ode: AbstractODE,
-    t: Float[Array, " time"],
+    ts: Float[Array, " time"],
     u0: Float[Array, " *batch dim"],
-    solver: dfx.AbstractAdaptiveSolver = dfx.Tsit5(),
-    rtol: float = 1e-4,
-    atol: float = 1e-4,
+    solver: dfx.AbstractSolver = dfx.Tsit5(),
+    dt0: float | None = None,
+    rtol: float | None = 1e-4,
+    atol: float | None = 1e-4,
     **diffeqsolve_kwargs,
 ) -> Float[Array, "*batch time dim"]:
     """A convenience wrapper function around diffrax.diffeqsolve."""
 
-    # assert u0.shape[-1] == ode.dim, f"""Shape of the initial condition
-    # u0: (..., dim) = {u0.shape} must match the dimensionality of the
-    # ode = {ode.dim}"""
+    # TODO: maybe some sort of shape check between expected shape of ode.rhs and u0?
+    stepsize_controller = _infer_stepsize_controller(dt0, rtol, atol)
 
     sol = dfx.diffeqsolve(
         dfx.ODETerm(ode.rhs),
         solver,
-        t[0],
-        t[-1],
-        None,
+        ts[0],
+        ts[-1],
+        dt0,
         u0,
-        saveat=dfx.SaveAt(ts=t),
-        stepsize_controller=dfx.PIDController(rtol=rtol, atol=atol),
+        saveat=dfx.SaveAt(ts=ts),
+        stepsize_controller=stepsize_controller,
         **diffeqsolve_kwargs,
     )
     return sol.ys

@@ -2,16 +2,16 @@ from dataclasses import replace
 from functools import partial
 from typing import Any
 
-import numpy as np
 import diffrax as dfx
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jax.experimental import jet
 import lineax.internal as lxi
-from sklearn.neighbors import NearestNeighbors
+import numpy as np
+from jax.experimental import jet
 from jaxtyping import Array, Float, PyTree
 from ott.utils import batched_vmap
+from sklearn.neighbors import NearestNeighbors
 
 from ..custom_types import FloatScalar
 from ..loss_functions import AbstractDynamicsLoss

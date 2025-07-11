@@ -4,6 +4,10 @@ from typing import Any
 import diffrax as dfx
 import equinox as eqx
 import jax
+from dynamical_systems.continuous.ode_base import (
+    _infer_stepsize_controller,
+    AbstractODE,
+)
 from jaxtyping import Array, Float
 
 from ..custom_types import FloatScalar, PRNGKeyArrayLike
@@ -14,7 +18,7 @@ ODEState = Float[Array, " dim"]
 StackedODEState = Float[Array, "time dim"]
 
 
-class NeuralODE(AbstractDynamicsModel):
+class NeuralODE(AbstractDynamicsModel, AbstractODE):
     net: eqx.nn.MLP
     dim: int = eqx.field(static=True)
     width: int = eqx.field(static=True)
@@ -31,9 +35,9 @@ class NeuralODE(AbstractDynamicsModel):
         depth: int,
         activation: Callable = jax.nn.gelu,
         solver: dfx.AbstractSolver = dfx.Tsit5(),
+        dt0: float | None = None,
         rtol: float | None = 1e-4,
         atol: float | None = 1e-4,
-        dt0: float | None = None,
         *,
         key: PRNGKeyArrayLike = 0,
     ):
@@ -50,20 +54,8 @@ class NeuralODE(AbstractDynamicsModel):
             key=jax.random.PRNGKey(key),
         )
         self.solver = solver
-        self.stepsize_controller = self._initialize_stepsize_controller(rtol, atol)
+        self.stepsize_controller = _infer_stepsize_controller(dt0, rtol, atol)
         self.dt0 = dt0
-
-    def _initialize_stepsize_controller(
-        self, rtol: float | None, atol: float | None
-    ) -> dfx.AbstractStepSizeController:
-        match (rtol, atol):
-            case (rtol_, atol_):
-                stepsize_ctrler = dfx.PIDController(rtol_, atol_)
-            case (tol, None) | (None, tol):
-                stepsize_ctrler = dfx.PIDController(tol, tol)
-            case (None, None):
-                stepsize_ctrler = dfx.ConstantStepSize()
-        return stepsize_ctrler
 
     def rhs(self, t, u, args):
         del t, args

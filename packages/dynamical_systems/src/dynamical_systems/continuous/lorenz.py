@@ -1,6 +1,5 @@
 from typing import ClassVar
 
-import diffrax as dfx
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
@@ -13,9 +12,6 @@ class Lorenz63(AbstractODE):
     beta: float = 8 / 3
     rho: float = 28
     dim: ClassVar[int] = 3
-    default_solver: ClassVar[dfx.AbstractAdaptiveSolver] = dfx.Tsit5()
-    default_rtol: ClassVar[float] = 1e-8
-    default_atol: ClassVar[float] = 1e-8
 
     @eqx.filter_jit
     def rhs(self, t, u, args=None):
@@ -37,9 +33,6 @@ class Lorenz63(AbstractODE):
 class Lorenz96(AbstractODE):
     dim: int = 20
     F: float = 16.0
-    default_solver: ClassVar[dfx.AbstractAdaptiveSolver] = dfx.Tsit5()
-    default_rtol: ClassVar[float] = 1e-8
-    default_atol: ClassVar[float] = 1e-8
 
     @eqx.filter_jit
     def rhs(self, t, u, args=None):

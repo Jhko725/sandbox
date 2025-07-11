@@ -7,13 +7,18 @@ import jax.numpy as jnp
 import scipy.spatial as scspatial
 from jaxtyping import Array, Float
 
+from dynamical_systems.continuous import AbstractODE
+
 
 @eqx.filter_jit
 def jacobian(
-    ode,
+    ode: AbstractODE,
     t: Float[Array, ""],
     u: Float[Array, " dim"],
 ) -> Float[Array, "dim dim"]:
+    """
+    Compute the Jacobian of the right hand side of the ODE at (t, u).
+    """
     if hasattr(ode, "jacobian"):
         jacobian_fn = ode.jacobian
     else:

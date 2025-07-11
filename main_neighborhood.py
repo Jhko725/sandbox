@@ -1,5 +1,6 @@
 import hydra
 import jax
+import scipy.signal as scsignal
 from dynamics_discovery.dataset import TimeSeriesDataset
 from dynamics_discovery.models.neighborhood import (
     create_neighborhood_dataset,
@@ -13,7 +14,6 @@ from dynamics_discovery.preprocessing import (
 from dynamics_discovery.training.vanilla import VanillaTrainer
 from dynamics_discovery.utils.tree import tree_satisfy_float_precision
 from omegaconf import DictConfig, OmegaConf
-import scipy.signal as scsignal
 
 
 @hydra.main(

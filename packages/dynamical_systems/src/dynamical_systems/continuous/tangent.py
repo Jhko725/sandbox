@@ -26,15 +26,3 @@ class TangentODE(AbstractODE):
         dx, dTx = rhs_jac(x, Tx)
 
         return dx, dTx
-
-    @property
-    def default_solver(self):
-        return self.ode.default_solver
-
-    @property
-    def default_atol(self):
-        return self.ode.default_atol
-
-    @property
-    def default_rtol(self):
-        return self.ode.default_rtol

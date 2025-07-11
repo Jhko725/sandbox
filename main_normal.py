@@ -1,10 +1,10 @@
 from functools import partial
 from typing import Any
 
+import diffrax as dfx
 import hydra
 import jax
 import jax.numpy as jnp
-import diffrax as dfx
 from dynamical_systems.continuous import AbstractODE
 from dynamics_discovery.custom_types import FloatScalar
 from dynamics_discovery.dataset import TimeSeriesDataset
@@ -15,7 +15,6 @@ from dynamics_discovery.models.neighborhood import (
 )
 from dynamics_discovery.preprocessing import (
     add_noise,
-    downsample,
     standardize,
 )
 from dynamics_discovery.training.vanilla import VanillaTrainer

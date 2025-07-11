@@ -1,8 +1,7 @@
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float, Shaped
-
 from dynamical_systems.transforms import ShiftScaleTransform
+from jaxtyping import Array, Float, Shaped
 
 
 def coerce_to_3d(x: Array) -> Shaped[Array, "?batch dim1 dim2"]:
