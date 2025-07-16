@@ -1,7 +1,0 @@
-_target_: ???
-optimizer:
-  _target_: optax.adabelief
-  learning_rate: 1e-3
-max_epochs: 2000
-wandb_entity: jhko725
-wandb_project: ${..data.name}

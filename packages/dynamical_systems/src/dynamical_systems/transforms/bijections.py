@@ -1,7 +1,7 @@
 import abc
 
 import equinox as eqx
-from jaxtyping import Array, Float
+from jaxtyping import ArrayLike, Float
 
 
 class AbstractBijection(eqx.Module):
@@ -10,18 +10,22 @@ class AbstractBijection(eqx.Module):
     Currently, very naive, supporting only the forward and inverse interfaces."""
 
     @abc.abstractmethod
-    def __call__(self, x: Array) -> Array: ...
+    def __call__(self, x: ArrayLike) -> ArrayLike: ...
 
     @abc.abstractmethod
-    def inverse(self, y: Array) -> Array: ...
+    def inverse(self, y: ArrayLike) -> ArrayLike: ...
 
 
-class ShiftScaleTransform(AbstractBijection):
-    shift: Float[Array, " dim"]
-    scale: Float[Array, " dim"]
+class Standardize(AbstractBijection):
+    mean: Float[ArrayLike, " dim"]
+    std: Float[ArrayLike, " dim"]
 
-    def __call__(self, x: Float[Array, "*batch dim"]) -> Float[Array, "*batch dim"]:
-        return (x - self.shift) / self.scale
+    def __call__(
+        self, x: Float[ArrayLike, "*batch dim"]
+    ) -> Float[ArrayLike, "*batch dim"]:
+        return (x - self.mean) / self.std
 
-    def inverse(self, y: Float[Array, "*batch dim"]) -> Float[Array, "*batch dim"]:
-        return y * self.scale + self.shift
+    def inverse(
+        self, y: Float[ArrayLike, "*batch dim"]
+    ) -> Float[ArrayLike, "*batch dim"]:
+        return y * self.std + self.mean

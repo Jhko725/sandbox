@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 from dynamical_systems.continuous import AbstractODE
 from dynamics_discovery.custom_types import FloatScalar
-from dynamics_discovery.dataset import TimeSeriesDataset
+from dynamics_discovery.data.dataset import TimeSeriesDataset
 from dynamics_discovery.loss_functions import AbstractDynamicsLoss
 from dynamics_discovery.models.abstract import AbstractDynamicsModel
 from dynamics_discovery.models.neighborhood import (

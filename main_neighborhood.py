@@ -1,7 +1,7 @@
 import hydra
 import jax
 import scipy.signal as scsignal
-from dynamics_discovery.dataset import TimeSeriesDataset
+from dynamics_discovery.data.dataset import TimeSeriesDataset
 from dynamics_discovery.models.neighborhood import (
     create_neighborhood_dataset,
     NeuralNeighborhoodFlow,

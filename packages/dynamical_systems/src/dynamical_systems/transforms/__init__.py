@@ -1,5 +1,5 @@
 from .bijections import (
     AbstractBijection as AbstractBijection,
-    ShiftScaleTransform as ShiftScaleTransform,
+    Standardize as Standardize,
 )
 from .tranformed import TransformedODE as TransformedODE

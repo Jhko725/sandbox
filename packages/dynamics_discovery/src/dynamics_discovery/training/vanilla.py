@@ -1,4 +1,4 @@
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -7,9 +7,10 @@ import jax.numpy as jnp
 import optax
 import wandb
 
-from ..io import save_model as save_model_
-from ..loss_functions import AbstractDynamicsLoss, MSELoss
-from ..models.abstract import AbstractDynamicsModel
+from dynamics_discovery.data.loaders import AbstractSegmentLoader
+from dynamics_discovery.io import save_model as save_model_
+from dynamics_discovery.loss_functions import AbstractDynamicsLoss, MSELoss
+from dynamics_discovery.models.abstract import AbstractDynamicsModel
 
 
 class VanillaTrainer:
@@ -22,7 +23,6 @@ class VanillaTrainer:
     def __init__(
         self,
         optimizer: optax.GradientTransformation = optax.adabelief(1e-3),
-        loss_fn: AbstractDynamicsLoss = MSELoss(),
         max_epochs: int = 5000,
         savedir: Path | str = "./results",
         savename: str = "checkpoint.eqx",
@@ -30,7 +30,6 @@ class VanillaTrainer:
         wandb_project: str | None = None,
     ):
         self.optimizer = optimizer
-        self.loss_fn = loss_fn
         self.max_epochs = max_epochs
 
         self.savedir = savedir
@@ -38,41 +37,44 @@ class VanillaTrainer:
 
         self.logger = wandb.init(entity=wandb_entity, project=wandb_project)
 
-    def make_step_fn(self) -> Callable:
-        loss_grad_fn = eqx.filter_value_and_grad(self.loss_fn, has_aux=True)
-
-        @eqx.filter_jit
-        def _step(model, batch, args, opt_state, **kwargs):
-            (loss, log_dict), grads = loss_grad_fn(model, batch, args, **kwargs)
-            updates, opt_state = self.optimizer.update(grads, opt_state)
-            model = eqx.apply_updates(model, updates)
-            return loss, log_dict, model, opt_state
-
-        return _step
-
     def train(
         self,
         model: AbstractDynamicsModel,
-        batch,
+        loader: AbstractSegmentLoader,
+        loss_fn: AbstractDynamicsLoss = MSELoss(),
+        args: Any = None,
         *,
         config: dict | None = None,
         **kwargs,
     ):
-        opt_state = self.optimizer.init(eqx.filter(model, eqx.is_inexact_array))
-        step_fn = self.make_step_fn()
+        _loss_grad_fn = eqx.filter_value_and_grad(loss_fn, has_aux=True)
 
+        @eqx.filter_jit
+        def _step_fn(model_, args_, loader_state, opt_state):
+            batch, loader_state_next = loader.load_batch(loader_state)
+            (loss, log_dict), grads = _loss_grad_fn(model_, batch, args_, **kwargs)
+            updates, opt_state_next = self.optimizer.update(
+                grads, opt_state, eqx.filter(model_, eqx.is_inexact_array)
+            )
+            model_ = eqx.apply_updates(model_, updates)
+            return loss, log_dict, model_, loader_state_next, opt_state_next
+
+        opt_state = self.optimizer.init(eqx.filter(model, eqx.is_inexact_array))
+        loader_state = loader.init()
         with self.logger as logger:
             if config is not None:
                 self.logger.config.update(config)
 
             loss_history = []
-            for epoch in range(self.max_epochs):
-                loss, log_dict, model, opt_state = step_fn(
-                    model, batch, None, opt_state, **kwargs
+            for step in range(self.max_epochs):
+                loss, log_dict, model, loader_state, opt_state = _step_fn(
+                    model, args, loader_state, opt_state
                 )
-                logger.log(log_dict, step=epoch)
-                logger.log({"train_loss": loss, "epoch": epoch}, step=epoch)
-                print(f"{epoch=}, {loss=}")
+                logger.log(log_dict, step=step)
+                logger.log(
+                    {"train_loss": loss, "epoch": step // loader.num_batches}, step=step
+                )
+                print(f"{step=}, {loss=}")
                 loss_history.append(loss.item())
 
         return model, jnp.asarray(loss_history)
