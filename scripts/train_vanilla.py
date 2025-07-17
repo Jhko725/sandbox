@@ -11,9 +11,8 @@ def main(cfg: DictConfig) -> None:
     jax.config.update("jax_enable_x64", cfg.enable_x64)
 
     model = hydra.utils.instantiate(cfg.model)
-
     dataset, _ = (
-        TimeSeriesDataset.load(cfg.data.dataset.loadpath)
+        TimeSeriesDataset.from_hdf5(cfg.data.dataset.loadpath)
         .downsample(cfg.data.downsample_factor)
         .add_noise(cfg.data.noise_std_relative)
         .standardize()

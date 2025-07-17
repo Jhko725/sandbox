@@ -13,9 +13,8 @@ def main(cfg: DictConfig) -> None:
     jax.config.update("jax_enable_x64", cfg.enable_x64)
 
     model = hydra.utils.instantiate(cfg.model)
-
     dataset, transform = (
-        TimeSeriesDataset.load(cfg.data.dataset.loadpath)
+        TimeSeriesDataset.from_hdf5(cfg.data.dataset.loadpath)
         .downsample(cfg.data.downsample_factor)
         .add_noise(cfg.data.noise_std_relative)
         .standardize()
@@ -26,7 +25,7 @@ def main(cfg: DictConfig) -> None:
             dataset, cfg.data.segment_length, cfg.data.batch_size
         )
     elif cfg.data.load_strategy == "full":
-        loader = AllSegmentLoader(dataset, cfg.data_segment_length)
+        loader = AllSegmentLoader(dataset, cfg.data.segment_length)
 
     trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
     trainer.savedir = trainer.savedir / "jacobian/"
@@ -34,7 +33,9 @@ def main(cfg: DictConfig) -> None:
 
     ode_true = hydra.utils.instantiate(cfg.data.dataset.ode)
     loss_fn = JacobianMatchingMSE(
-        TransformedODE(ode_true, transform), cfg.jacobian.weight
+        TransformedODE(ode_true, transform),
+        cfg.jacobian.weight,
+        cfg.jacobian.chunk_size,
     )
     model, _ = trainer.train(model, loader, loss_fn, config=config_dict)
     trainer.save_model(model, config_dict["model"])

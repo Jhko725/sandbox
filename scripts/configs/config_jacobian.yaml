@@ -7,6 +7,7 @@ defaults:
 
 jacobian:
   weight: 1.0
+  chunk_size: null
 
 hydra:
   launcher: 
