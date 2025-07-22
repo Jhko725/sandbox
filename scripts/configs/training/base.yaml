@@ -1,9 +1,9 @@
 _target_: dynamics_discovery.training.VanillaTrainer
 optimizer:
   _target_: optax.adabelief
-  learning_rate: 1e-3
+  learning_rate: 5e-4
 max_epochs: 5000
 savedir: ./results/${..data.dataset.name}_downsample=${..data.downsample_factor}/len=${..data.segment_length}
-savename: noise=${..data.noise_std_relative}_key=${..model.key}.eqx
+savename: lr=${.optimizer.learning_rate}_noise=${..data.noise_std_relative}_key=${..model.key}.eqx
 wandb_entity: jhko725
 wandb_project: ${..data.dataset.name}
