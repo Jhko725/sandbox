@@ -1,0 +1,7 @@
+defaults:
+  - dataset: lorenz63
+downsample_factor: 1
+noise_std_relative: 0.0
+segment_length: 2
+batch_size: null
+load_strategy: "full"

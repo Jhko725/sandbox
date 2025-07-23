@@ -1,0 +1,7 @@
+defaults:
+  - dataset: lorenz63_large
+downsample_factor: 40
+noise_std_relative: 0.0
+segment_length: 2
+batch_size: 2048
+load_strategy: "random"

@@ -10,7 +10,7 @@ from dynamics_discovery.custom_types import FloatScalar
 from dynamics_discovery.data.dataset import TimeSeriesDataset
 from dynamics_discovery.loss_functions import AbstractDynamicsLoss
 from dynamics_discovery.models.abstract import AbstractDynamicsModel
-from dynamics_discovery.models.neighborhood import (
+from dynamics_discovery.neighborhood import (
     create_neighborhood_dataset,
 )
 from dynamics_discovery.preprocessing import (

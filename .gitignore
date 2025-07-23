@@ -7,7 +7,9 @@ wheels/
 *.egg-info
 outputs/
 wandb/
+!scripts/configs/wandb/
 data/
+!scripts/configs/data/
 results/
 results_analysis/
 multirun/
