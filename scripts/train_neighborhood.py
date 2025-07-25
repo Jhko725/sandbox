@@ -30,12 +30,12 @@ def main(cfg: DictConfig) -> None:
     loader = NeighborhoodSegmentLoader(
         dataset,
         cfg.data.segment_length,
-        cfg.data.batch_size,
         cfg.neighborhood.num_neighbors,
+        cfg.data.batch_size,
     )
 
     trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
-    trainer.savedir = trainer.savedir / "neighborhood/"
+    trainer.savedir = trainer.savedir / f"neighborhood/weight={cfg.neighborhood.weight}"
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
 
     loss_fn = NeighborhoodMSELoss(

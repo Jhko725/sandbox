@@ -208,8 +208,9 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
                 **kwargs,
             )
 
+        du_nn_data = u_nn_data - jnp.expand_dims(u_data, 2)
         u_pred, du_pred = _solve(
-            t_data[:, :len_neighbors], u_data[:, 0], u_nn_data[:, 0]
+            t_data[:, :len_neighbors], u_data[:, 0], du_nn_data[:, 0]
         )
 
         u_nn_pred = jnp.expand_dims(u_pred, 2) + du_pred

@@ -8,8 +8,7 @@ wheels/
 outputs/
 wandb/
 !scripts/configs/wandb/
-data/
-!scripts/configs/data/
+/data/
 results/
 results_analysis/
 multirun/
