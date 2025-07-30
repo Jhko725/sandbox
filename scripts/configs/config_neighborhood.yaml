@@ -8,7 +8,7 @@ defaults:
 neighborhood:
   second_order: false
   use_taylor_mode: false
-  num_neighbors: 30
+  num_neighbors: 10
   weight: 1.0
   chunk_size: null
 

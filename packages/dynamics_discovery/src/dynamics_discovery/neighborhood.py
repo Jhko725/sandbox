@@ -213,7 +213,7 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
             t_data[:, :len_neighbors], u_data[:, 0], du_nn_data[:, 0]
         )
 
-        u_nn_pred = jnp.expand_dims(u_pred, 2) + du_pred
+        # u_nn_pred = jnp.expand_dims(u_pred, 2) + du_pred
 
         # mse_neighbors = jnp.mean(
         #     jnp.sum(
@@ -223,13 +223,14 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
         #     #     jnp.sum(weights, axis=-1), min=1
         #     # )  # Trick do avoid divide by zero
         # )
-        mse_neighbors = jnp.mean((u_nn_pred - u_nn_data) ** 2)
+        # mse_neighbors = jnp.mean((u_nn_pred - u_nn_data) ** 2)
+        mse_neighbors = jnp.mean((du_pred - du_nn_data) ** 2)
 
         # u_pred_rest = _solve_ode(t_data[:, len_neighbors - 1 :], u_pred[:, -1])
         # u_pred_total = jnp.concatenate((u_pred, u_pred_rest[:, 1:]), axis=1)
         # mse_total = jnp.mean((u_pred_total - u_data) ** 2)
         mse_total = jnp.mean((u_pred - u_data) ** 2)
-        return (mse_total + self.weight * mse_neighbors) / (1 + self.weight), {
+        return mse_total + self.weight * mse_neighbors, {
             "mse": mse_total,
             "mse_neighbors": mse_neighbors,
         }

@@ -19,6 +19,10 @@ def get_trajectory_segments(dataset, sample_idx, time_idx, segment_length: int):
     return t_segment, u_segment
 
 
+class AbstractBatchingStrategy(eqx.Module):
+    batch_size: eqx.AbstractVar[int]
+
+
 class AbstractSegmentLoader(eqx.Module):
     """
     Abstract base class for SegmentLoaders, which are dedicated clases that samples a
