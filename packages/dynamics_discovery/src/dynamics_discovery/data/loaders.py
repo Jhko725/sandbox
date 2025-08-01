@@ -1,11 +1,12 @@
 import abc
 import math
+from typing import Any
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jaxtyping import Array, Int, PRNGKeyArray, PyTree
+from jaxtyping import Array, Int, PRNGKeyArray, PyTree, Float
 
 from dynamics_discovery.data.dataset import TimeSeriesDataset
 
@@ -19,13 +20,126 @@ def get_trajectory_segments(dataset, sample_idx, time_idx, segment_length: int):
     return t_segment, u_segment
 
 
-class AbstractBatchingStrategy(eqx.Module):
-    batch_size: eqx.AbstractVar[int]
+BatchState = Any
 
 
-class AbstractSegmentLoader(eqx.Module):
+class AbstractBatching(eqx.Module):
+    batch_size: eqx.AbstractVar[int | None]
+
+    @abc.abstractmethod
+    def init(self, num_total_data: int) -> BatchState: ...
+
+    @abc.abstractmethod
+    def generate_batch(
+        self, batch_state: BatchState
+    ) -> tuple[Int[Array, " {self.batch_size}"], BatchState]:
+        pass
+
+
+class FullBatching(AbstractBatching):
+    @property
+    def batch_size(self) -> None:
+        return None
+
+    def init(self, num_total_data: int) -> BatchState:
+        return num_total_data
+
+    def generate_batch(
+        self, batch_state: BatchState
+    ) -> tuple[Int[Array, " {self.batch_size}"], BatchState]:
+        num_total_data = batch_state_next = batch_state
+        batch_data_indices = np.arange(num_total_data)
+        return batch_data_indices, batch_state_next
+
+
+class RandomSampleBatching(AbstractBatching):
+    batch_size: int = eqx.field(static=True)
+    random_seed: int = eqx.field(static=True)
+
+    def __init__(self, batch_size: int, *, random_seed: int = 0):
+        self.batch_size = batch_size
+        self.random_seed = random_seed
+
+    def init(self, num_total_data: int) -> BatchState:
+        return num_total_data, jax.random.key(self.random_seed)
+
+    def generate_batch(
+        self, batch_state: BatchState
+    ) -> tuple[Int[Array, " {self.batch_size}"], BatchState]:
+        num_total_data, key = batch_state
+        key, key_next = jax.random.split(key)
+        batch_data_indices = jax.random.randint(
+            key, (self.batch_size,), 0, num_total_data
+        )
+        batch_state_next = (num_total_data, key_next)
+        return batch_data_indices, batch_state_next
+
+
+class MiniBatching(AbstractBatching):
+    batch_size: int = eqx.field(static=True)
+    permute_initial: bool = eqx.field(static=True)
+    permute_every_epoch: bool = eqx.field(static=True)
+    drop_last: bool = eqx.field(static=True)
+    random_seed: int = eqx.field(static=True)
+
+    def __init__(
+        self,
+        batch_size: int,
+        permute_initial: bool = True,
+        permute_every_epoch: bool = False,
+        drop_last: bool = True,
+        *,
+        random_seed: int = 0,
+    ):
+        self.batch_size = batch_size
+        self.permute_initial = permute_initial
+        self.permute_every_epoch = permute_every_epoch
+        self.drop_last = drop_last
+        self.random_seed = random_seed
+
+    def init(self, num_total_data: int) -> BatchState:
+        key, key_permute = jax.random.split(jax.random.key(self.random_seed))
+        data_inds = (
+            jax.random.permutation(key_permute, num_total_data)
+            if self.permute_initial
+            else jnp.arange(num_total_data)
+        )
+        minibatch_ind = 0
+        return data_inds, minibatch_ind, key
+
+    def batches_per_epoch(self, num_data_total: int) -> Float[Array, ""]:
+        round_fn = jnp.floor if self.drop_last else jnp.ceil
+        return round_fn(num_data_total / self.batch_size)
+
+    def generate_batch(
+        self, batch_state: BatchState
+    ) -> tuple[Int[Array, " {self.batch_size}"], BatchState]:
+        data_inds, minibatch_ind, key = batch_state
+
+        batch_data_indices = jax.lax.dynamic_slice_in_dim(
+            data_inds,
+            minibatch_ind,
+            self.batch_size,
+        )
+
+        # Handle permutation and drop_last
+        num_total_data = len(data_inds)
+        if minibatch_ind + 1 == self.batches_per_epoch(num_total_data):
+            if not self.drop_last:
+                batch_data_indices = data_inds[minibatch_ind * self.batch_size :]
+            minibatch_ind = 0
+            if self.permute_every_epoch:
+                key, key_permute = jax.random.split(key)
+                data_inds = jax.random.permutation(key_permute, num_total_data)
+
+        batch_state_next = (data_inds, minibatch_ind + 1, key)
+
+        return batch_data_indices, batch_state_next
+
+
+class SegmentLoader(eqx.Module):
     """
-    Abstract base class for SegmentLoaders, which are dedicated clases that samples a
+    Basic implementation of a SegmentLoader, which is a dedicated class that samples a
     given dataset of trajectories (of class TimeSeriesDataset) and returns a batch of
     trajectory segments with fixed length.
 
@@ -33,9 +147,9 @@ class AbstractSegmentLoader(eqx.Module):
     `torch.utils.data.DataLoader`.
     """
 
-    dataset: eqx.AbstractVar[TimeSeriesDataset]
-    segment_length: eqx.AbstractVar[int]
-    batch_size: eqx.AbstractVar[int]
+    dataset: TimeSeriesDataset
+    segment_length: int
+    batch_strategy: AbstractBatching
 
     def __check_init__(self):
         if self.segment_length < 2:
@@ -50,7 +164,15 @@ class AbstractSegmentLoader(eqx.Module):
         return len(self.dataset) * self.num_segments_per_traj
 
     @property
-    def num_batches(self) -> int:
+    def batch_size(self) -> int:
+        batch_size = self.batch_strategy.batch_size
+        if batch_size is None:
+            return self.num_total_segments
+        else:
+            return batch_size
+
+    @property
+    def num_batches(self) -> int | None:
         """Number of batches required to cover (on average) the entire dataset.
 
         This number is always rounded up to the nearest integer."""
@@ -71,7 +193,6 @@ class AbstractSegmentLoader(eqx.Module):
         """
         return jnp.divmod(linear_indices, self.num_segments_per_traj)
 
-    @abc.abstractmethod
     def init(self) -> PyTree:
         """
         Returns the initial loader_state to be fed into the first call of
@@ -79,9 +200,9 @@ class AbstractSegmentLoader(eqx.Module):
 
         This is inspired by optax's optimizer.init function.
         """
-        ...
+        batch_state_init = self.batch_strategy.init(self.num_total_segments)
+        return (batch_state_init,)
 
-    @abc.abstractmethod
     def load_batch(self, loader_state: PyTree) -> tuple[PyTree[Array], PyTree]:
         """
         Main logic to load a single batch of time series data segments.
@@ -91,41 +212,10 @@ class AbstractSegmentLoader(eqx.Module):
         sampling, this would correspond to the batch index (and the random key if the
         data is reshuffled each epoch.)
         """
-        ...
-
-
-class AllSegmentLoader(AbstractSegmentLoader):
-    dataset: TimeSeriesDataset
-    segment_length: int = eqx.field(static=True)
-
-    @property
-    def batch_size(self) -> int:
-        return self.num_total_segments
-
-    def init(self):
-        return None
-
-    def load_batch(self, loader_state=None):
-        sample_indices = self.linear_to_sample_indices(
-            np.arange(self.num_total_segments, dtype=np.int_)
+        (batch_state,) = loader_state
+        linear_indices, batch_state_next = self.batch_strategy.generate_batch(
+            batch_state
         )
-        return self.get_segments(*sample_indices), loader_state
-
-
-class RandomSegmentLoader(AbstractSegmentLoader):
-    dataset: TimeSeriesDataset
-    segment_length: int = eqx.field(static=True)
-    batch_size: int = eqx.field(static=True)
-    seed: int = eqx.field(default=0, static=True)
-
-    def init(self):
-        return jax.random.PRNGKey(self.seed)
-
-    def load_batch(self, loader_state: PRNGKeyArray):
-        key, new_loader_state = jax.random.split(loader_state)
-        linear_indices = jax.random.randint(
-            key, (self.batch_size,), 0, self.num_total_segments
-        )
-        return self.get_segments(
-            *self.linear_to_sample_indices(linear_indices)
-        ), new_loader_state
+        batch = self.get_segments(*self.linear_to_sample_indices(linear_indices))
+        loader_state_next = (batch_state_next,)
+        return batch, loader_state_next

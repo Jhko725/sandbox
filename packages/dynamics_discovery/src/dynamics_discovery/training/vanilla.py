@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import optax
 import wandb
 
-from dynamics_discovery.data.loaders import AbstractSegmentLoader
+from dynamics_discovery.data.loaders import SegmentLoader
 from dynamics_discovery.io import save_model as save_model_
 from dynamics_discovery.loss_functions import AbstractDynamicsLoss, MSELoss
 from dynamics_discovery.models.abstract import AbstractDynamicsModel
@@ -40,7 +40,7 @@ class VanillaTrainer:
     def train(
         self,
         model: AbstractDynamicsModel,
-        loader: AbstractSegmentLoader,
+        loader: SegmentLoader,
         loss_fn: AbstractDynamicsLoss = MSELoss(),
         args: Any = None,
         *,

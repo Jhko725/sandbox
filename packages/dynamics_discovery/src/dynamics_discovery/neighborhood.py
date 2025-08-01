@@ -12,28 +12,32 @@ from ott.utils import batched_vmap
 
 from .custom_types import FloatScalar
 from .data import TimeSeriesDataset
-from .data.loaders import AbstractSegmentLoader
+from .data.loaders import SegmentLoader, AbstractBatching
 from .loss_functions import AbstractDynamicsLoss
 from .models.neuralode import NeuralODE
 
 
-class NeighborhoodSegmentLoader(AbstractSegmentLoader):
-    dataset: TimeSeriesDataset
-    segment_length: int = eqx.field(static=True)
+class NeighborhoodSegmentLoader(SegmentLoader):
     num_neighbors: int = eqx.field(static=True)
-    batch_size: int = eqx.field(static=True)
-    seed: int = eqx.field(default=0, static=True)
-    _tree: scspatial.KDTree = eqx.field(static=True, init=False)
+    _tree: scspatial.KDTree = eqx.field(static=True)
 
-    def __post_init__(self):
-        self._tree = scspatial.KDTree(
+    def __init__(
+        self,
+        dataset: TimeSeriesDataset,
+        segment_length: int,
+        num_neighbors: int,
+        batch_strategy: AbstractBatching,
+    ):
+        super().__init__(dataset, segment_length, batch_strategy)
+        self.num_neighbors = num_neighbors
+        self._tree = self._create_tree()
+
+    def _create_tree(self):
+        return scspatial.KDTree(
             self.dataset.u[:, : -self.segment_length + 1].reshape(
                 -1, self.dataset.u.shape[-1]
             )
         )
-
-    def init(self):
-        return jax.random.PRNGKey(self.seed)
 
     def get_neighbors_linear_indices(
         self, u0_batch: Float[Array, "{self.batch_size} dim"]
@@ -57,13 +61,7 @@ class NeighborhoodSegmentLoader(AbstractSegmentLoader):
             Array, "{self.batch_size} {self.segment_length} {self.num_neighbors} dim"
         ],
     ]:
-        key, new_loader_state = jax.random.split(loader_state)
-        linear_indices = jax.random.randint(
-            key, (self.batch_size,), 0, self.num_total_segments
-        )
-        t_batch, u_batch = self.get_segments(
-            *self.linear_to_sample_indices(linear_indices)
-        )
+        (t_batch, u_batch), loader_state_next = super().load_batch(loader_state)
         nn_linear_indices: Int[Array, "{self.batch_size} {self.num_neighbors} dim"] = (
             self.get_neighbors_linear_indices(u_batch[:, 0])
         )
@@ -71,7 +69,7 @@ class NeighborhoodSegmentLoader(AbstractSegmentLoader):
             *self.linear_to_sample_indices(nn_linear_indices)
         )
         u_nn_batch = jnp.permute_dims(u_nn_batch, (0, 2, 1, 3))
-        return (t_batch, u_batch, u_nn_batch), new_loader_state
+        return (t_batch, u_batch, u_nn_batch), loader_state_next
 
 
 class NeuralNeighborhoodFlow(eqx.Module):

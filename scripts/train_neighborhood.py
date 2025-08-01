@@ -31,7 +31,7 @@ def main(cfg: DictConfig) -> None:
         dataset,
         cfg.data.segment_length,
         cfg.neighborhood.num_neighbors,
-        cfg.data.batch_size,
+        hydra.utils.instantiate(cfg.data.batch_strategy),
     )
 
     trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
