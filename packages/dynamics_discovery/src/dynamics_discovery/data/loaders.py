@@ -108,7 +108,7 @@ class MiniBatching(AbstractBatching):
         return data_inds, minibatch_ind, key
 
     def batches_per_epoch(self, num_data_total: int) -> Float[Array, ""]:
-        round_fn = jnp.floor if self.drop_last else jnp.ceil
+        round_fn = math.floor if self.drop_last else math.ceil
         return round_fn(num_data_total / self.batch_size)
 
     def generate_batch(
