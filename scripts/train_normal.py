@@ -12,9 +12,8 @@ from dynamics_discovery.data.loaders import AbstractBatching
 from dynamics_discovery.loss_functions import AbstractDynamicsLoss
 from dynamics_discovery.models.abstract import AbstractDynamicsModel
 from dynamics_discovery.neighborhood import NeighborhoodSegmentLoader
-
 from dynamics_discovery.training.vanilla import VanillaTrainer
-from jaxtyping import Array, Float, PyTree, PRNGKeyArray
+from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 from omegaconf import DictConfig, OmegaConf
 from ott.utils import batched_vmap
 

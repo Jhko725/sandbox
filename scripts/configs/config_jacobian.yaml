@@ -2,7 +2,7 @@ defaults:
   - _self_
   - model: neuralode
   - data: lorenz63_dyslim
-  - training: base
+  - training: vanilla
   - override hydra/launcher: submitit_slurm
 
 jacobian:

@@ -12,7 +12,7 @@ from ott.utils import batched_vmap
 
 from .custom_types import FloatScalar
 from .data import TimeSeriesDataset
-from .data.loaders import SegmentLoader, AbstractBatching
+from .data.loaders import AbstractBatching, SegmentLoader
 from .loss_functions import AbstractDynamicsLoss
 from .models.neuralode import NeuralODE
 
@@ -165,6 +165,7 @@ class NeuralNeighborhoodFlow(eqx.Module):
 class NeighborhoodMSELoss(AbstractDynamicsLoss):
     weight: float = 1.0
     batch_size: int | None = None
+    multiterm: bool = False
 
     def __call__(
         self,
@@ -228,7 +229,12 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
         # u_pred_total = jnp.concatenate((u_pred, u_pred_rest[:, 1:]), axis=1)
         # mse_total = jnp.mean((u_pred_total - u_data) ** 2)
         mse_total = jnp.mean((u_pred - u_data) ** 2)
-        return mse_total + self.weight * mse_neighbors, {
+
+        if self.multiterm:
+            loss = [mse_total, self.weight * mse_neighbors]
+        else:
+            loss = mse_total + self.weight * mse_neighbors
+        return loss, {
             "mse": mse_total,
             "mse_neighbors": mse_neighbors,
         }

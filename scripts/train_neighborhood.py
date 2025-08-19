@@ -7,6 +7,8 @@ from dynamics_discovery.neighborhood import (
     NeuralNeighborhoodFlow,
 )
 from dynamics_discovery.training.vanilla import VanillaTrainer
+from dynamics_discovery.training.multiterm import MultitermTrainer
+from dynamics_discovery.training.base import BaseTrainer
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -34,13 +36,16 @@ def main(cfg: DictConfig) -> None:
         hydra.utils.instantiate(cfg.data.batch_strategy),
     )
 
-    trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
+    trainer: BaseTrainer = hydra.utils.instantiate(cfg.training)
     trainer.savedir = trainer.savedir / f"neighborhood/weight={cfg.neighborhood.weight}"
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
+
+    multiterm = True if isinstance(trainer, MultitermTrainer) else False
 
     loss_fn = NeighborhoodMSELoss(
         cfg.neighborhood.weight,
         cfg.neighborhood.chunk_size,
+        multiterm=multiterm
     )
     model, _ = trainer.train(model, loader, loss_fn, config=config_dict)
     trainer.save_model(model, config_dict["model"])

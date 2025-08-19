@@ -6,7 +6,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jaxtyping import Array, Int, PRNGKeyArray, PyTree, Float
+from jaxtyping import Array, Float, Int, PyTree
 
 from dynamics_discovery.data.dataset import TimeSeriesDataset
 

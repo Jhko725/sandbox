@@ -1,0 +1,10 @@
+_target_: dynamics_discovery.training.MultitermTrainer
+optimizer:
+  _target_: optax.adabelief
+  learning_rate: 2e-3
+gradient_strategy: config
+max_epochs: 5000
+savedir: ./results/${..data.dataset.name}_downsample=${..data.downsample_factor}/len=${..data.segment_length}
+savename: lr=${.optimizer.learning_rate}_noise=${..data.noise_std_relative}_key=${..model.key}_config.eqx
+wandb_entity: jhko725
+wandb_project: ${..data.dataset.name}
