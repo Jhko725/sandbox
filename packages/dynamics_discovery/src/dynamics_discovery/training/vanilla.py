@@ -27,9 +27,13 @@ class VanillaTrainer(BaseTrainer):
         wandb_entity: str | None = None,
         wandb_project: str | None = None,
     ):
-        super().__init__(optimizer, max_epochs, savedir, savename, wandb_entity, wandb_project)
+        super().__init__(
+            optimizer, max_epochs, savedir, savename, wandb_entity, wandb_project
+        )
 
-    def make_step_fn(self, loader: SegmentLoader, loss_fn:AbstractDynamicsLoss)-> Callable:
+    def make_step_fn(
+        self, loader: SegmentLoader, loss_fn: AbstractDynamicsLoss
+    ) -> Callable:
         loss_grad_fn = eqx.filter_value_and_grad(loss_fn, has_aux=True)
 
         @eqx.filter_jit
@@ -41,6 +45,5 @@ class VanillaTrainer(BaseTrainer):
             )
             model_ = eqx.apply_updates(model_, updates)
             return loss, log_dict, model_, loader_state_next, opt_state_next
-        
+
         return _step_fn
-    

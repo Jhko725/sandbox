@@ -1,7 +1,7 @@
 import hydra
 import jax
-from dynamics_discovery.data import AllSegmentLoader, RandomSegmentLoader
 from dynamics_discovery.data.dataset import TimeSeriesDataset
+from dynamics_discovery.data.loaders import SegmentLoader
 from dynamics_discovery.training.vanilla import VanillaTrainer
 from omegaconf import DictConfig, OmegaConf
 
@@ -18,12 +18,11 @@ def main(cfg: DictConfig) -> None:
         .standardize()
     )
 
-    if cfg.data.load_strategy == "random":
-        loader = RandomSegmentLoader(
-            dataset, cfg.data.segment_length, cfg.data.batch_size
-        )
-    elif cfg.data.load_strategy == "full":
-        loader = AllSegmentLoader(dataset, cfg.data_segment_length)
+    loader = SegmentLoader(
+        dataset,
+        cfg.data.segment_length,
+        hydra.utils.instantiate(cfg.data.batch_strategy),
+    )
 
     trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)

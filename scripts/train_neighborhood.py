@@ -6,9 +6,8 @@ from dynamics_discovery.neighborhood import (
     NeighborhoodSegmentLoader,
     NeuralNeighborhoodFlow,
 )
-from dynamics_discovery.training.vanilla import VanillaTrainer
-from dynamics_discovery.training.multiterm import MultitermTrainer
 from dynamics_discovery.training.base import BaseTrainer
+from dynamics_discovery.training.multiterm import MultitermTrainer
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -43,9 +42,7 @@ def main(cfg: DictConfig) -> None:
     multiterm = True if isinstance(trainer, MultitermTrainer) else False
 
     loss_fn = NeighborhoodMSELoss(
-        cfg.neighborhood.weight,
-        cfg.neighborhood.chunk_size,
-        multiterm=multiterm
+        cfg.neighborhood.weight, cfg.neighborhood.chunk_size, multiterm=multiterm
     )
     model, _ = trainer.train(model, loader, loss_fn, config=config_dict)
     trainer.save_model(model, config_dict["model"])

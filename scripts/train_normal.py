@@ -12,7 +12,8 @@ from dynamics_discovery.data.loaders import AbstractBatching
 from dynamics_discovery.loss_functions import AbstractDynamicsLoss
 from dynamics_discovery.models.abstract import AbstractDynamicsModel
 from dynamics_discovery.neighborhood import NeighborhoodSegmentLoader
-from dynamics_discovery.training.vanilla import VanillaTrainer
+from dynamics_discovery.training.multiterm import MultitermTrainer
+from dynamics_discovery.training.vanilla import BaseTrainer
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 from omegaconf import DictConfig, OmegaConf
 from ott.utils import batched_vmap
@@ -113,6 +114,7 @@ def directional_cosine_squared(x1, x2):
 class NormalLoss(AbstractDynamicsLoss):
     weight: float = 1.0
     batch_size: int | None = None
+    multiterm: bool = False
 
     def __call__(
         self,
@@ -141,7 +143,11 @@ class NormalLoss(AbstractDynamicsLoss):
         mse_total = jnp.mean(mse_)
         sin_sqr_total = jnp.mean(sin_sqr_)
         ortho_total = jnp.mean(ortho_)
-        return mse_total + self.weight * sin_sqr_total + self.weight * ortho_total, {
+        if self.multiterm:
+            loss = [mse_total, self.weight * sin_sqr_total, self.weight * ortho_total]
+        else:
+            loss = mse_total + self.weight * sin_sqr_total + self.weight * ortho_total
+        return loss, {
             "mse": mse_total,
             "normal_loss": sin_sqr_total,
             "ortho_loss": ortho_total,
@@ -170,13 +176,22 @@ def main(cfg: DictConfig) -> None:
         hydra.utils.instantiate(cfg.data.batch_strategy),
     )
 
-    trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
+    trainer: BaseTrainer = hydra.utils.instantiate(cfg.training)
     trainer.savedir = trainer.savedir / f"normal={cfg.neighborhood.weight}"
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
 
+    if isinstance(trainer, MultitermTrainer):
+        multiterm = True
+        trainer.gradient_weights = [
+            1.0,
+            cfg.neighborhood.weight,
+            cfg.neighborhood.weight,
+        ]
+    else:
+        multiterm = False
+
     loss_fn = NormalLoss(
-        cfg.neighborhood.weight,
-        cfg.neighborhood.chunk_size,
+        cfg.neighborhood.weight, cfg.neighborhood.chunk_size, multiterm=multiterm
     )
     model, _ = trainer.train(model, loader, loss_fn, config=config_dict)
     trainer.save_model(model, config_dict["model"])

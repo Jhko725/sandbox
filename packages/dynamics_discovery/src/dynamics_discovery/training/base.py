@@ -71,8 +71,7 @@ class BaseTrainer(ABC):
         return model, np.asarray(loss_history)
 
     @abstractmethod
-    def make_step_fn(self, loss_fn:AbstractDynamicsLoss) -> Callable:
-        ...
+    def make_step_fn(self, loss_fn: AbstractDynamicsLoss) -> Callable: ...
 
     @property
     def savedir(self) -> Path:
