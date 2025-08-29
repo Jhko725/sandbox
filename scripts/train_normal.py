@@ -137,7 +137,9 @@ class NormalLoss(AbstractDynamicsLoss):
 
             if self.orthogonal_loss:
                 ortho = jax.vmap(directional_cosine_squared)(
-                    jax.vmap(lambda t_, u_: model.ode.rhs(t_, u_, None))(t_data_, u_data_),
+                    jax.vmap(lambda t_, u_: model.ode.rhs(t_, u_, None))(
+                        t_data_, u_data_
+                    ),
                     Nu_data_,
                 )
                 ortho_loss = jnp.mean(ortho)
@@ -152,9 +154,15 @@ class NormalLoss(AbstractDynamicsLoss):
         if self.orthogonal_loss:
             ortho_total = jnp.mean(ortho_)
             if self.multiterm:
-                loss = [mse_total, self.weight * sin_sqr_total, self.weight * ortho_total]
+                loss = [
+                    mse_total,
+                    self.weight * sin_sqr_total,
+                    self.weight * ortho_total,
+                ]
             else:
-                loss = mse_total + self.weight * sin_sqr_total + self.weight * ortho_total
+                loss = (
+                    mse_total + self.weight * sin_sqr_total + self.weight * ortho_total
+                )
 
             aux_dict = {
                 "mse": mse_total,
@@ -174,6 +182,7 @@ class NormalLoss(AbstractDynamicsLoss):
             }
 
         return loss, aux_dict
+
 
 @hydra.main(
     config_path="./configs", config_name="config_neighborhood", version_base=None

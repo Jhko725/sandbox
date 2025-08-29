@@ -12,8 +12,8 @@ from dynamics_discovery.data.dataset import TimeSeriesDataset
 from dynamics_discovery.data.loaders import SegmentLoader
 from dynamics_discovery.loss_functions import AbstractDynamicsLoss
 from dynamics_discovery.models.abstract import AbstractDynamicsModel
-from dynamics_discovery.training.vanilla import BaseTrainer
 from dynamics_discovery.training.multiterm import MultitermTrainer
+from dynamics_discovery.training.vanilla import BaseTrainer
 from jaxtyping import Array, Float, PyTree
 from omegaconf import DictConfig, OmegaConf
 from ott.utils import batched_vmap
@@ -145,7 +145,7 @@ def main(cfg: DictConfig) -> None:
         TransformedODE(ode_true, transform),
         cfg.jacobian.weight,
         cfg.jacobian.chunk_size,
-        multiterm=multiterm
+        multiterm=multiterm,
     )
     model, _ = trainer.train(model, loader, loss_fn, config=config_dict)
     trainer.save_model(model, config_dict["model"])

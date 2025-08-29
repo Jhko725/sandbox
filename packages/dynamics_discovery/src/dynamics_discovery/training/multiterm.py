@@ -122,13 +122,13 @@ class MultitermTrainer(BaseTrainer):
     savename: str
     logger: wandb.sdk.wandb_run.Run
     gradient_strategy: str
-    gradient_weights: Float[Array, " num_terms"]|None
+    gradient_weights: Float[Array, " num_terms"] | None
 
     def __init__(
         self,
         optimizer: optax.GradientTransformation = optax.adabelief(1e-3),
         gradient_strategy: Literal["config"] = "config",
-        gradient_weights: Sequence[float] |None = None,
+        gradient_weights: Sequence[float] | None = None,
         max_epochs: int = 5000,
         savedir: Path | str = "./results",
         savename: str = "checkpoint.eqx",
@@ -139,7 +139,9 @@ class MultitermTrainer(BaseTrainer):
             optimizer, max_epochs, savedir, savename, wandb_entity, wandb_project
         )
         self.gradient_strategy = gradient_strategy
-        self.gradient_weights = jnp.asarray(gradient_weights) if gradient_weights is not None else None
+        self.gradient_weights = (
+            jnp.asarray(gradient_weights) if gradient_weights is not None else None
+        )
 
     def make_step_fn(
         self, loader: SegmentLoader, loss_fn: AbstractDynamicsLoss
