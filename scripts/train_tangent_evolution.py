@@ -12,7 +12,8 @@ from dynamics_discovery.data.dataset import TimeSeriesDataset
 from dynamics_discovery.data.loaders import SegmentLoader
 from dynamics_discovery.loss_functions import AbstractDynamicsLoss
 from dynamics_discovery.models.abstract import AbstractDynamicsModel
-from dynamics_discovery.training.vanilla import VanillaTrainer
+from dynamics_discovery.training.vanilla import BaseTrainer
+from dynamics_discovery.training.multiterm import MultitermTrainer
 from jaxtyping import Array, Float, PyTree
 from omegaconf import DictConfig, OmegaConf
 from ott.utils import batched_vmap
@@ -50,16 +51,19 @@ class TangentEvolutionMatchingMSE(AbstractDynamicsLoss):
     ode_true: AbstractODE
     weight: float
     batch_size: int | None
+    multiterm: bool = False
 
     def __init__(
         self,
         ode_true: AbstractODE,
         weight: float = 1.0,
         batch_size: int | None = None,
+        multiterm: bool = False,
     ):
         self.ode_true = ode_true
         self.weight = weight
         self.batch_size = batch_size
+        self.multiterm = multiterm
 
     def __call__(
         self,
@@ -99,7 +103,12 @@ class TangentEvolutionMatchingMSE(AbstractDynamicsLoss):
 
         mse_total = jnp.mean(_mse(t_data, u_data))
         evol_loss_total = jnp.mean(_tangent_evol_loss(t_data, u_data))
-        return mse_total + self.weight * evol_loss_total, {
+
+        if self.multiterm:
+            loss = [mse_total, evol_loss_total]
+        else:
+            loss = mse_total + self.weight * evol_loss_total
+        return loss, {
             "mse": mse_total,
             "tangent_evolution_loss": evol_loss_total,
         }
@@ -123,15 +132,20 @@ def main(cfg: DictConfig) -> None:
         hydra.utils.instantiate(cfg.data.batch_strategy),
     )
 
-    trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
+    trainer: BaseTrainer = hydra.utils.instantiate(cfg.training)
     trainer.savedir = trainer.savedir / "tangent_evolution/"
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
 
     ode_true = hydra.utils.instantiate(cfg.data.dataset.ode)
+    if isinstance(trainer, MultitermTrainer):
+        multiterm = True
+    else:
+        multiterm = False
     loss_fn = TangentEvolutionMatchingMSE(
         TransformedODE(ode_true, transform),
         cfg.jacobian.weight,
         cfg.jacobian.chunk_size,
+        multiterm=multiterm
     )
     model, _ = trainer.train(model, loader, loss_fn, config=config_dict)
     trainer.save_model(model, config_dict["model"])

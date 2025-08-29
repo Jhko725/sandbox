@@ -115,6 +115,7 @@ class NormalLoss(AbstractDynamicsLoss):
     weight: float = 1.0
     batch_size: int | None = None
     multiterm: bool = False
+    orthogonal_loss: bool = False
 
     def __call__(
         self,
@@ -133,26 +134,46 @@ class NormalLoss(AbstractDynamicsLoss):
             )
             mse_u = jnp.mean((u_pred - u_data_) ** 2)
             sin_sqr = 1 - jax.vmap(directional_cosine_squared)(Nu_data_, Nu_pred)
-            ortho = jax.vmap(directional_cosine_squared)(
-                jax.vmap(lambda t_, u_: model.ode.rhs(t_, u_, None))(t_data_, u_data_),
-                Nu_data_,
-            )
-            return mse_u, jnp.mean(sin_sqr), jnp.mean(ortho)
+
+            if self.orthogonal_loss:
+                ortho = jax.vmap(directional_cosine_squared)(
+                    jax.vmap(lambda t_, u_: model.ode.rhs(t_, u_, None))(t_data_, u_data_),
+                    Nu_data_,
+                )
+                ortho_loss = jnp.mean(ortho)
+            else:
+                ortho_loss = None
+            return mse_u, jnp.mean(sin_sqr), ortho_loss
 
         mse_, sin_sqr_, ortho_ = _loss(t_data, u_data, Nu_data)
         mse_total = jnp.mean(mse_)
         sin_sqr_total = jnp.mean(sin_sqr_)
-        ortho_total = jnp.mean(ortho_)
-        if self.multiterm:
-            loss = [mse_total, self.weight * sin_sqr_total, self.weight * ortho_total]
-        else:
-            loss = mse_total + self.weight * sin_sqr_total + self.weight * ortho_total
-        return loss, {
-            "mse": mse_total,
-            "normal_loss": sin_sqr_total,
-            "ortho_loss": ortho_total,
-        }
 
+        if self.orthogonal_loss:
+            ortho_total = jnp.mean(ortho_)
+            if self.multiterm:
+                loss = [mse_total, self.weight * sin_sqr_total, self.weight * ortho_total]
+            else:
+                loss = mse_total + self.weight * sin_sqr_total + self.weight * ortho_total
+
+            aux_dict = {
+                "mse": mse_total,
+                "normal_loss": sin_sqr_total,
+                "ortho_loss": ortho_total,
+            }
+
+        else:
+            if self.multiterm:
+                loss = [mse_total, self.weight * sin_sqr_total]
+            else:
+                loss = mse_total + self.weight * sin_sqr_total
+
+            aux_dict = {
+                "mse": mse_total,
+                "normal_loss": sin_sqr_total,
+            }
+
+        return loss, aux_dict
 
 @hydra.main(
     config_path="./configs", config_name="config_neighborhood", version_base=None
@@ -182,11 +203,11 @@ def main(cfg: DictConfig) -> None:
 
     if isinstance(trainer, MultitermTrainer):
         multiterm = True
-        trainer.gradient_weights = [
-            1.0,
-            cfg.neighborhood.weight,
-            cfg.neighborhood.weight,
-        ]
+        # trainer.gradient_weights = [
+        #     1.0,
+        #     cfg.neighborhood.weight,
+        #     cfg.neighborhood.weight,
+        # ]
     else:
         multiterm = False
 
