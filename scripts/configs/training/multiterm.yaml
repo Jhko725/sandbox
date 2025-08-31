@@ -5,6 +5,6 @@ optimizer:
 gradient_strategy: config
 max_epochs: 5000
 savedir: ./results/${..data.dataset.name}_downsample=${..data.downsample_factor}/len=${..data.segment_length}
-savename: lr=${.optimizer.learning_rate}_noise=${..data.noise_std_relative}_key=${..model.key}_config.eqx
+savename: lr=${.optimizer.learning_rate}_noise=${..data.noise_std_relative}_key=${..model.key}_${.gradient_strategy}
 wandb_entity: jhko725
 wandb_project: ${..data.dataset.name}

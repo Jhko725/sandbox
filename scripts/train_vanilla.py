@@ -2,6 +2,7 @@ import hydra
 import jax
 from dynamics_discovery.data.dataset import TimeSeriesDataset
 from dynamics_discovery.data.loaders import SegmentLoader
+from dynamics_discovery.loss_functions import MSELoss
 from dynamics_discovery.training.vanilla import VanillaTrainer
 from omegaconf import DictConfig, OmegaConf
 
@@ -26,10 +27,7 @@ def main(cfg: DictConfig) -> None:
 
     trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
-
-    model, _ = trainer.train(model, loader, config=config_dict)
-    trainer.save_model(model, config_dict["model"])
-
+    model, _ = trainer.train(model, loader, MSELoss(), config=config_dict)
 
 if __name__ == "__main__":
     main()

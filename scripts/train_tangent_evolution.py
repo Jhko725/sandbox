@@ -148,7 +148,6 @@ def main(cfg: DictConfig) -> None:
         multiterm=multiterm,
     )
     model, _ = trainer.train(model, loader, loss_fn, config=config_dict)
-    trainer.save_model(model, config_dict["model"])
 
 
 if __name__ == "__main__":

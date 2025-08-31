@@ -6,7 +6,9 @@ from typing import Any
 import equinox as eqx
 import numpy as np
 import optax
+import orbax.checkpoint as ocp
 import wandb
+from orbax.checkpoint._src.checkpoint_managers.preservation_policy import BestN
 
 from dynamics_discovery.data.loaders import SegmentLoader
 from dynamics_discovery.io import save_model as save_model_
@@ -33,7 +35,7 @@ class BaseTrainer(ABC):
         self.optimizer = optimizer
         self.max_epochs = max_epochs
 
-        self.savedir = savedir
+        self.savedir = Path(savedir)
         self.savename = savename
 
         self.logger = wandb.init(entity=wandb_entity, project=wandb_project)
@@ -52,21 +54,42 @@ class BaseTrainer(ABC):
 
         opt_state = self.optimizer.init(eqx.filter(model, eqx.is_inexact_array))
         loader_state = loader.init()
+
+        ckpt_manager = ocp.CheckpointManager(
+            (self.savedir / self.savename).resolve(),
+            options=ocp.CheckpointManagerOptions(
+                preservation_policy=BestN(
+                    get_metric_fn=lambda metrics: metrics["train_loss"],
+                    reverse=True,
+                    n=1,
+                )
+            ),
+            metadata=config["model"],
+        )
+
         with self.logger as logger:
             if config is not None:
                 self.logger.config.update(config)
 
-            loss_history = []
-            for step in range(self.max_epochs):
-                loss, log_dict, model, loader_state, opt_state = step_fn(
-                    model, args, loader_state, opt_state
-                )
-                logger.log(log_dict, step=step)
-                logger.log(
-                    {"train_loss": loss, "epoch": step // loader.num_batches}, step=step
-                )
-                print(f"{step=}, {loss=}")
-                loss_history.append(loss.item())
+            with ckpt_manager as mngr:
+                loss_history = []
+                for step in range(self.max_epochs):
+                    loss, log_dict, model, loader_state, opt_state = step_fn(
+                        model, args, loader_state, opt_state
+                    )
+                    metrics = log_dict | {
+                        "train_loss": loss,
+                        "epoch": step // loader.num_batches,
+                    }
+                    logger.log(metrics, step=step)
+
+                    print(f"{step=}, {loss=}")
+                    loss_history.append(loss.item())
+                    mngr.save(
+                        step,
+                        args=ocp.args.StandardSave(eqx.filter(model, eqx.is_array)),
+                        metrics=metrics,
+                    )
 
         return model, np.asarray(loss_history)
 
