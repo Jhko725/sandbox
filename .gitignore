@@ -10,6 +10,7 @@ wandb/
 !scripts/configs/wandb/
 /data/
 results/
+results_old/
 results_analysis/
 multirun/
 # Virtual environments

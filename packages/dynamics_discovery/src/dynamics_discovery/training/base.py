@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +11,6 @@ import wandb
 from orbax.checkpoint._src.checkpoint_managers.preservation_policy import BestN
 
 from dynamics_discovery.data.loaders import SegmentLoader
-from dynamics_discovery.io import save_model as save_model_
 from dynamics_discovery.loss_functions import AbstractDynamicsLoss
 from dynamics_discovery.models.abstract import AbstractDynamicsModel
 
@@ -74,7 +73,7 @@ class BaseTrainer(ABC):
             with ckpt_manager as mngr:
                 loss_history = []
                 for step in range(self.max_epochs):
-                    loss, log_dict, model, loader_state, opt_state = step_fn(
+                    loss, log_dict, model_next, loader_state, opt_state = step_fn(
                         model, args, loader_state, opt_state
                     )
                     metrics = log_dict | {
@@ -90,7 +89,7 @@ class BaseTrainer(ABC):
                         args=ocp.args.StandardSave(eqx.filter(model, eqx.is_array)),
                         metrics=metrics,
                     )
-
+                    model = model_next
         return model, np.asarray(loss_history)
 
     @abstractmethod
@@ -108,13 +107,3 @@ class BaseTrainer(ABC):
     @property
     def savepath(self) -> Path:
         return self.savedir / self.savename
-
-    def save_model(
-        self,
-        model: AbstractDynamicsModel,
-        config: Mapping[str, Any] | None = None,
-        *,
-        overwrite: bool = False,
-    ):
-        # Handle the case when config is not passed
-        save_model_(self.savepath, model, config, overwrite)
