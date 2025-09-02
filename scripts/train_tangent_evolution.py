@@ -1,117 +1,12 @@
-from functools import partial
-from typing import Any
-
-import diffrax as dfx
 import hydra
 import jax
-import jax.numpy as jnp
-from dynamical_systems.continuous import AbstractODE, TangentODE
 from dynamical_systems.transforms import TransformedODE
-from dynamics_discovery.custom_types import FloatScalar
 from dynamics_discovery.data.dataset import TimeSeriesDataset
 from dynamics_discovery.data.loaders import SegmentLoader
-from dynamics_discovery.loss_functions import AbstractDynamicsLoss
-from dynamics_discovery.models.abstract import AbstractDynamicsModel
+from dynamics_discovery.loss_functions import TangentEvolutionMatchingMSE
 from dynamics_discovery.training.multiterm import MultitermTrainer
 from dynamics_discovery.training.vanilla import BaseTrainer
-from jaxtyping import Array, Float, PyTree
 from omegaconf import DictConfig, OmegaConf
-from ott.utils import batched_vmap
-
-
-def tangent_evolution_matrix(
-    ode: AbstractODE,
-    x: Float[Array, " dim"],
-    t0: float,
-    t1: float,
-    solver: dfx.AbstractAdaptiveSolver = dfx.Tsit5(),
-    stepsize_controller: dfx.AbstractAdaptiveStepSizeController = dfx.PIDController(
-        rtol=1e-4, atol=1e-6
-    ),
-):
-    tangent_ode = TangentODE(ode)
-    u0 = (x, jnp.identity(ode.dim))
-
-    sol = dfx.diffeqsolve(
-        dfx.ODETerm(tangent_ode.rhs),
-        solver,
-        t0,
-        t1,
-        None,
-        u0,
-        None,
-        saveat=dfx.SaveAt(t1=True),
-        stepsize_controller=stepsize_controller,
-    )
-    _, M_t = sol.ys
-    return M_t[0]  # remove time dimension
-
-
-class TangentEvolutionMatchingMSE(AbstractDynamicsLoss):
-    ode_true: AbstractODE
-    weight: float
-    batch_size: int | None
-    multiterm: bool = False
-
-    def __init__(
-        self,
-        ode_true: AbstractODE,
-        weight: float = 1.0,
-        batch_size: int | None = None,
-        multiterm: bool = False,
-    ):
-        self.ode_true = ode_true
-        self.weight = weight
-        self.batch_size = batch_size
-        self.multiterm = multiterm
-
-    def __call__(
-        self,
-        model: AbstractDynamicsModel,
-        batch: PyTree[Float[Array, "batch ..."]],
-        args: Any = None,
-        **kwargs: Any,
-    ) -> FloatScalar:
-        t_data, u_data = batch
-
-        batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
-
-        @partial(batched_vmap, in_axes=(0, 0), batch_size=batch_size)
-        def _mse(t_data_: Float[Array, " time"], u_data_):
-            u_pred = model.solve(t_data_, u_data_[0], args, **kwargs)
-            return jnp.mean((u_pred - u_data_) ** 2)
-
-        @partial(batched_vmap, in_axes=(0, 0), batch_size=batch_size)
-        def _tangent_evol_loss(t_data_: Float[Array, " time"], u_data_):
-            evol_pred = tangent_evolution_matrix(
-                model,
-                u_data_[0],
-                t_data_[0],
-                t_data_[-1],
-                model.solver,
-                model.stepsize_controller,
-            )
-            evol_true = tangent_evolution_matrix(
-                self.ode_true,
-                u_data_[0],
-                t_data_[0],
-                t_data_[-1],
-                model.solver,
-                model.stepsize_controller,
-            )
-            return jnp.mean((evol_pred - evol_true) ** 2)
-
-        mse_total = jnp.mean(_mse(t_data, u_data))
-        evol_loss_total = jnp.mean(_tangent_evol_loss(t_data, u_data))
-
-        if self.multiterm:
-            loss = [mse_total, evol_loss_total]
-        else:
-            loss = mse_total + self.weight * evol_loss_total
-        return loss, {
-            "mse": mse_total,
-            "tangent_evolution_loss": evol_loss_total,
-        }
 
 
 @hydra.main(config_path="./configs", config_name="config_jacobian", version_base=None)
@@ -147,6 +42,7 @@ def main(cfg: DictConfig) -> None:
         cfg.jacobian.chunk_size,
         multiterm=multiterm,
     )
+
     model, _ = trainer.train(model, loader, loss_fn, config=config_dict)
 
 

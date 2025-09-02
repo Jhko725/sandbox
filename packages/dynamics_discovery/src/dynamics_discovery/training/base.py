@@ -49,6 +49,8 @@ class BaseTrainer(ABC):
         config: dict | None = None,
         **kwargs,
     ):
+        print(loss_fn)
+        print(eqx.filter_value_and_grad(loss_fn, has_aux=True))
         step_fn = self.make_step_fn(loader, loss_fn)
 
         opt_state = self.optimizer.init(eqx.filter(model, eqx.is_inexact_array))
