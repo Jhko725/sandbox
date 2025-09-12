@@ -4,7 +4,6 @@ from dynamics_discovery.data.dataset import TimeSeriesDataset
 from dynamics_discovery.neighborhood import (
     NeighborhoodMSELoss,
     NeighborhoodSegmentLoader,
-    NeuralNeighborhoodFlow,
 )
 from dynamics_discovery.training.base import BaseTrainer
 from dynamics_discovery.training.multiterm import MultitermTrainer
@@ -17,11 +16,7 @@ from omegaconf import DictConfig, OmegaConf
 def main(cfg: DictConfig) -> None:
     jax.config.update("jax_enable_x64", cfg.enable_x64)
 
-    model = NeuralNeighborhoodFlow(
-        hydra.utils.instantiate(cfg.model),
-        cfg.neighborhood.second_order,
-        cfg.neighborhood.use_taylor_mode,
-    )
+    model = hydra.utils.instantiate(cfg.model)
     dataset, _ = (
         TimeSeriesDataset.from_hdf5(cfg.data.dataset.loadpath)
         .downsample(cfg.data.downsample_factor)
@@ -42,7 +37,11 @@ def main(cfg: DictConfig) -> None:
     multiterm = True if isinstance(trainer, MultitermTrainer) else False
 
     loss_fn = NeighborhoodMSELoss(
-        cfg.neighborhood.weight, cfg.neighborhood.chunk_size, multiterm=multiterm
+        cfg.neighborhood.weight,
+        cfg.neighborhood.chunk_size,
+        multiterm=multiterm,
+        second_order=cfg.neighborhood.second_order,
+        use_taylor_mode=cfg.neighborhood.use_taylor_mode,
     )
     model, _ = trainer.train(model, loader, loss_fn, config=config_dict)
 

@@ -27,6 +27,7 @@ dependencies = [
     "orbax-checkpoint>0.5.0",
     "ott-jax>=0.5.1",
     "scipy>=1.16.1",
+    "tqdm>=4.67.1",
     "wandb>=0.21.3",
 ]
 
