@@ -1,0 +1,9 @@
+defaults:
+  - base
+
+dataset:
+  name: hyperchen05
+  dim: 4
+  loadpath: ./data/hyperchen05_train.hdf5
+  ode:
+    _target_: dynamical_systems.continuous.HyperChen05

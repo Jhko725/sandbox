@@ -14,7 +14,9 @@ class Lorenz63(AbstractODE):
     dim: ClassVar[int] = 3
 
     @eqx.filter_jit
-    def rhs(self, t, u, args=None):
+    def rhs(
+        self, t: Float[Array, ""], u: Float[Array, " {self.dim}"], args=None
+    ) -> Float[Array, " {self.dim}"]:
         del t, args
         x, y, z = u
         dx = self.sigma * (y - x)

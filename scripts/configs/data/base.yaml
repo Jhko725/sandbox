@@ -1,0 +1,8 @@
+dataset: ???
+downsample_factor: 40
+noise_std_relative: 0.0
+segment_length: 2
+batch_strategy:
+  _target_: dynamics_discovery.data.loaders.RandomSampleBatching
+  batch_size: 2048
+  random_seed: 0

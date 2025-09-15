@@ -59,16 +59,19 @@ class JacobianMatchingMSE(AbstractDynamicsLoss):
     jacobian_fn: Callable = eqx.field(static=True)
     jacobian_weight: float
     batch_size: int | None
+    multiterm: bool
 
     def __init__(
         self,
         ode_true: AbstractODE,
         jacobian_weight: float = 1.0,
         batch_size: int | None = None,
+        multiterm: bool = False,
     ):
         self.jacobian_fn = lambda t, u: jacobian(ode_true, t, u)
         self.jacobian_weight = jacobian_weight
         self.batch_size = batch_size
+        self.multiterm = multiterm
 
     def __call__(
         self,
@@ -94,7 +97,13 @@ class JacobianMatchingMSE(AbstractDynamicsLoss):
 
         mse_total = jnp.mean(_mse(t_data, u_data))
         jac_loss_total = jnp.mean(_jac_loss(t_data, u_data))
-        return mse_total + self.jacobian_weight * jac_loss_total, {
+
+        if self.multiterm:
+            loss = [mse_total, self.jacobian_weight * jac_loss_total]
+        else:
+            loss = mse_total + self.jacobian_weight * jac_loss_total
+
+        return loss, {
             "mse": mse_total,
             "jac_loss": jac_loss_total,
         }

@@ -1,0 +1,9 @@
+defaults:
+  - base
+
+dataset:
+  name: rossler76
+  dim: 3
+  loadpath: ./data/rossler76_train.hdf5
+  ode:
+    _target_: dynamical_systems.continuous.Rossler76

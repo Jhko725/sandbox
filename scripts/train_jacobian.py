@@ -4,7 +4,8 @@ from dynamical_systems.transforms import TransformedODE
 from dynamics_discovery.data.dataset import TimeSeriesDataset
 from dynamics_discovery.data.loaders import SegmentLoader
 from dynamics_discovery.loss_functions import JacobianMatchingMSE
-from dynamics_discovery.training.vanilla import VanillaTrainer
+from dynamics_discovery.training.multiterm import MultitermTrainer
+from dynamics_discovery.training.vanilla import BaseTrainer
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -26,15 +27,20 @@ def main(cfg: DictConfig) -> None:
         hydra.utils.instantiate(cfg.data.batch_strategy),
     )
 
-    trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
+    trainer: BaseTrainer = hydra.utils.instantiate(cfg.training)
     trainer.savedir = trainer.savedir / "jacobian/"
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
 
     ode_true = hydra.utils.instantiate(cfg.data.dataset.ode)
+    if isinstance(trainer, MultitermTrainer):
+        multiterm = True
+    else:
+        multiterm = False
     loss_fn = JacobianMatchingMSE(
         TransformedODE(ode_true, transform),
         cfg.jacobian.weight,
         cfg.jacobian.chunk_size,
+        multiterm=multiterm,
     )
     model, _ = trainer.train(model, loader, loss_fn, config=config_dict)
 
