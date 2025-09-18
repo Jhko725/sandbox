@@ -5,11 +5,12 @@ import diffrax as dfx
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import scipy.spatial as scspatial
+import numpy as np
 from dynamical_systems.continuous import AbstractODE
 from jax.experimental import jet
 from jaxtyping import Array, Float, Int, PRNGKeyArray, PyTree
 from ott.utils import batched_vmap
+from sklearn.neighbors import KDTree
 
 from .custom_types import FloatScalar
 from .data import TimeSeriesDataset
@@ -21,7 +22,10 @@ from .models.neuralode import NeuralODE
 
 class NeighborhoodSegmentLoader(SegmentLoader):
     num_neighbors: int = eqx.field(static=True)
-    _tree: scspatial.KDTree = eqx.field(static=True)
+    r_min: float = eqx.field(static=True)
+    r_max: float = eqx.field(static=True)
+    seed: int = eqx.field(static=True)
+    _tree: KDTree = eqx.field(static=True)
 
     def __init__(
         self,
@@ -29,30 +33,65 @@ class NeighborhoodSegmentLoader(SegmentLoader):
         segment_length: int,
         num_neighbors: int,
         batch_strategy: AbstractBatching,
+        r_min: float = 0.05,
+        r_max: float = 0.07,
+        seed: int = 0,
     ):
         super().__init__(dataset, segment_length, batch_strategy)
         self.num_neighbors = num_neighbors
         self._tree = self._create_tree()
+        self.r_min = r_min
+        self.r_max = r_max
+        self.seed = seed
 
     def _create_tree(self):
-        return scspatial.KDTree(
+        return KDTree(
             self.dataset.u[:, : -self.segment_length + 1].reshape(
                 -1, self.dataset.u.shape[-1]
             )
         )
 
     def get_neighbors_linear_indices(
-        self, u0_batch: Float[Array, "{self.batch_size} dim"]
+        self, u0_batch: Float[Array, "{self.batch_size} dim"], seed: int
     ):
         result_shape = jax.ShapeDtypeStruct(
             (u0_batch.shape[0], self.num_neighbors), jnp.int64
         )
+
+        def query_radius_interval(
+            u0_batch_: Float[Array, "{self.batch_size} dim"], seed: int
+        ):
+            idx_radius, dist = self._tree.query_radius(
+                u0_batch_, self.r_max, return_distance=True
+            )
+
+            rng = np.random.default_rng(seed=int(seed))
+            return np.stack(
+                [
+                    rng.choice(idx_[d > self.r_min], self.num_neighbors)
+                    for idx_, d in zip(idx_radius, dist)
+                ],
+                axis=0,
+            )
+
         return jax.pure_callback(
-            lambda u0_: self._tree.query(u0_, self.num_neighbors + 1)[1][:, 1:],
+            query_radius_interval,
             result_shape,
             u0_batch,
-            vmap_method="expand_dims",
+            seed,
+            vmap_method="sequential",
         )
+
+    def init(self) -> PyTree:
+        """
+        Returns the initial loader_state to be fed into the first call of
+        `self.load_batch`.
+
+        This is inspired by optax's optimizer.init function.
+        """
+        batch_state_init = self.batch_strategy.init(self.num_total_segments)
+        neighbor_seed_init = self.seed
+        return (batch_state_init, neighbor_seed_init)
 
     def load_batch(
         self, loader_state: PRNGKeyArray
@@ -63,14 +102,16 @@ class NeighborhoodSegmentLoader(SegmentLoader):
             Array, "{self.batch_size} {self.segment_length} {self.num_neighbors} dim"
         ],
     ]:
-        (t_batch, u_batch), loader_state_next = super().load_batch(loader_state)
+        batch_state, neighbor_seed = loader_state
+        (t_batch, u_batch), (batch_state_next,) = super().load_batch((batch_state,))
         nn_linear_indices: Int[Array, "{self.batch_size} {self.num_neighbors} dim"] = (
-            self.get_neighbors_linear_indices(u_batch[:, 0])
+            self.get_neighbors_linear_indices(u_batch[:, 0], neighbor_seed)
         )
         _, u_nn_batch = eqx.filter_vmap(self.get_segments)(
             *self.linear_to_sample_indices(nn_linear_indices)
         )
         u_nn_batch = jnp.permute_dims(u_nn_batch, (0, 2, 1, 3))
+        loader_state_next = (batch_state_next, neighbor_seed + 1)
         return (t_batch, u_batch, u_nn_batch), loader_state_next
 
 
