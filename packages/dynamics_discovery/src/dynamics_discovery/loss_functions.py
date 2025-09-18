@@ -197,3 +197,59 @@ class TangentEvolutionMatchingMSE(AbstractDynamicsLoss):
             "mse": mse_total,
             "tangent_evolution_loss": evol_loss_total,
         }
+
+
+class TangentEvolutionMatchingMSE2(AbstractDynamicsLoss):
+    ode_true: AbstractODE = eqx.field(static=True)
+    weight: float
+    batch_size: int | None
+    multiterm: bool
+
+    def __init__(
+        self,
+        ode_true: AbstractODE,
+        weight: float = 1.0,
+        batch_size: int | None = None,
+        multiterm: bool = False,
+    ):
+        self.ode_true = ode_true
+        self.weight = weight
+        self.batch_size = batch_size
+        self.multiterm = multiterm
+
+    def __call__(
+        self,
+        model: AbstractDynamicsModel,
+        batch: PyTree[Float[Array, "batch ..."]],
+        args: Any = None,
+        **kwargs: Any,
+    ) -> FloatScalar:
+        t_data, u_data = batch
+
+        batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
+        print(self)
+
+        @partial(batched_vmap, in_axes=(0, 0), batch_size=batch_size)
+        def _loss(t_data_: Float[Array, " time"], u_data_):
+            u_pred, evol_pred = tangent_evolution_matrix(
+                model,
+                u_data_[0],
+                t_data_,
+                model.solver,
+                model.stepsize_controller,
+            )
+            mse = jnp.mean((u_pred - u_data_) ** 2)
+            return mse, jnp.mean((evol_pred - jnp.eye(model.dim)) ** 2)
+
+        mse_, evol_loss_ = _loss(t_data, u_data)
+        mse_total = jnp.mean(mse_)
+        evol_loss_total = jnp.mean(evol_loss_)
+
+        if self.multiterm:
+            loss = [mse_total, self.weight*evol_loss_total]
+        else:
+            loss = mse_total + self.weight * evol_loss_total
+        return loss, {
+            "mse": mse_total,
+            "tangent_evolution_loss": evol_loss_total,
+        }

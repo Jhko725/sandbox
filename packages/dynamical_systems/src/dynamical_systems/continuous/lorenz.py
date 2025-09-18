@@ -33,8 +33,8 @@ class Lorenz63(AbstractODE):
 
 
 class Lorenz96(AbstractODE):
-    dim: int = 20
-    F: float = 16.0
+    dim: int = 6
+    F: float = 10.0
 
     @eqx.filter_jit
     def rhs(self, t, u, args=None):

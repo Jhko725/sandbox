@@ -1,0 +1,9 @@
+defaults:
+  - base
+
+dataset:
+  name: lorenz96
+  dim: 6
+  loadpath: ./data/lorenz96_train.hdf5
+  ode:
+    _target_: dynamical_systems.continuous.Lorenz96
