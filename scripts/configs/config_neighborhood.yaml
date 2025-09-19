@@ -9,6 +9,9 @@ neighborhood:
   second_order: false
   use_taylor_mode: false
   num_neighbors: 30
+  r_min: 0.05
+  r_max: 0.07
+  seed: 0
   weight: 1.0
   chunk_size: null
 

@@ -13,6 +13,7 @@ dependencies = [
     "dynamical-systems",
     "dynamics-discovery",
     "equinox>=0.13.0",
+    "faiss-cpu>=1.12.0",
     "hydra-core>=1.3.2",
     "hydra-submitit-launcher>=1.2.0",
     "ipykernel>=6.30.1",

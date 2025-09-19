@@ -28,6 +28,9 @@ def main(cfg: DictConfig) -> None:
         cfg.data.segment_length,
         cfg.neighborhood.num_neighbors,
         hydra.utils.instantiate(cfg.data.batch_strategy),
+        r_min=cfg.neighborhood.r_min,
+        r_max=cfg.neighborhood.r_max,
+        seed=cfg.neighborhood.seed,
     )
 
     trainer: BaseTrainer = hydra.utils.instantiate(cfg.training)
