@@ -25,7 +25,8 @@ class NeighborhoodSegmentLoader(SegmentLoader):
     r_min: float = eqx.field(static=True)
     r_max: float = eqx.field(static=True)
     seed: int = eqx.field(static=True)
-    _tree: KDTree = eqx.field(static=True)
+    search_dataset_downsample: int = eqx.field(static=True)
+    _neighbor_index: list[np.ndarray] = eqx.field(static=True)
 
     def __init__(
         self,
@@ -35,41 +36,55 @@ class NeighborhoodSegmentLoader(SegmentLoader):
         batch_strategy: AbstractBatching,
         r_min: float = 0.05,
         r_max: float = 0.07,
+        search_dataset_downsample: int = 200,
         seed: int = 0,
     ):
         super().__init__(dataset, segment_length, batch_strategy)
         self.num_neighbors = num_neighbors
-        self._tree = self._create_tree()
         self.r_min = r_min
         self.r_max = r_max
         self.seed = seed
+        self.search_dataset_downsample = search_dataset_downsample
+        self._neighbor_index = self._build_neighbor_index()
 
-    def _create_tree(self):
-        return KDTree(
-            self.dataset.u[:, : -self.segment_length + 1].reshape(
-                -1, self.dataset.u.shape[-1]
-            )
+    def _create_tree(self) -> KDTree:
+        u_flat = self.dataset.u[:, : -self.segment_length + 1].reshape(
+            -1, self.dataset.u.shape[-1]
         )
+        return KDTree(u_flat[:: self.search_dataset_downsample])
+
+    def _build_neighbor_index(self):
+        print("Creating KDTree for neighbor search")
+        tree = self._create_tree()
+        print("Searching for neighbors within maximum radius")
+        u_flat = self.dataset.u[:, : -self.segment_length + 1].reshape(
+            -1, self.dataset.u.shape[-1]
+        )
+        idx_radius, dist = tree.query_radius(u_flat, self.r_max, return_distance=True)
+        print("Filtering points within minimum distance")
+        neighbor_index = [
+            idx_[d > self.r_min] if len(idx_[d > self.r_min]) > 0 else np.array([i])
+            for i, (idx_, d) in enumerate(zip(idx_radius, dist))
+        ]
+        return neighbor_index
 
     def get_neighbors_linear_indices(
-        self, u0_batch: Float[Array, "{self.batch_size} dim"], seed: int
+        self, u_linear_indices: Int[Array, " {self.batch_size}"], seed: int
     ):
         result_shape = jax.ShapeDtypeStruct(
-            (u0_batch.shape[0], self.num_neighbors), jnp.int64
+            (u_linear_indices.shape[0], self.num_neighbors), jnp.int64
         )
 
         def query_radius_interval(
-            u0_batch_: Float[Array, "{self.batch_size} dim"], seed: int
+            u_linear_indices_: Int[Array, " {self.batch_size}"], seed: int
         ):
-            idx_radius, dist = self._tree.query_radius(
-                u0_batch_, self.r_max, return_distance=True
-            )
-
             rng = np.random.default_rng(seed=int(seed))
             return np.stack(
                 [
-                    rng.choice(idx_[d > self.r_min], self.num_neighbors)
-                    for idx_, d in zip(idx_radius, dist)
+                    rng.choice(
+                        self._neighbor_index[i], self.num_neighbors, replace=True
+                    )
+                    for i in u_linear_indices_
                 ],
                 axis=0,
             )
@@ -77,7 +92,7 @@ class NeighborhoodSegmentLoader(SegmentLoader):
         return jax.pure_callback(
             query_radius_interval,
             result_shape,
-            u0_batch,
+            u_linear_indices,
             seed,
             vmap_method="sequential",
         )
@@ -103,9 +118,14 @@ class NeighborhoodSegmentLoader(SegmentLoader):
         ],
     ]:
         batch_state, neighbor_seed = loader_state
-        (t_batch, u_batch), (batch_state_next,) = super().load_batch((batch_state,))
+        linear_indices, batch_state_next = self.batch_strategy.generate_batch(
+            batch_state
+        )
+        t_batch, u_batch = self.get_segments(
+            *self.linear_to_sample_indices(linear_indices)
+        )
         nn_linear_indices: Int[Array, "{self.batch_size} {self.num_neighbors} dim"] = (
-            self.get_neighbors_linear_indices(u_batch[:, 0], neighbor_seed)
+            self.get_neighbors_linear_indices(linear_indices, neighbor_seed)
         )
         _, u_nn_batch = eqx.filter_vmap(self.get_segments)(
             *self.linear_to_sample_indices(nn_linear_indices)
