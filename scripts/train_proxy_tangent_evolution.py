@@ -28,7 +28,9 @@ def main(cfg: DictConfig) -> None:
     )
 
     trainer: BaseTrainer = hydra.utils.instantiate(cfg.training)
-    trainer.savedir = trainer.savedir / "proxy_tangent_evolution/"
+    trainer.savedir = (
+        trainer.savedir / f"proxy_tangent_evolution/weight={cfg.jacobian.weight}"
+    )
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
 
     ode_true = hydra.utils.instantiate(cfg.data.dataset.ode)
