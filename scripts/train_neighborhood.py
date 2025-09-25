@@ -31,7 +31,11 @@ def main(cfg: DictConfig) -> None:
     )
 
     trainer: BaseTrainer = hydra.utils.instantiate(cfg.training)
-    trainer.savedir = trainer.savedir / f"neighborhood/weight={cfg.neighborhood.weight}"
+    trainer.savedir = (
+        trainer.savedir
+        / f"neighborhood/weight={cfg.neighborhood.weight}"
+        / f"neighbors={cfg.neighborhood.num_neighbors}"
+    )
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
 
     multiterm = True if isinstance(trainer, MultitermTrainer) else False

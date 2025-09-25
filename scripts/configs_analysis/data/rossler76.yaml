@@ -1,0 +1,5 @@
+name: rossler76
+checkpointpath: ./results/best/rossler76
+trainpath: ./data/rossler76_train.hdf5
+testpath: ./data/rossler76_test.hdf5
+testpath_lyapunov: ./data/rossler76_lyapunov_test.npz

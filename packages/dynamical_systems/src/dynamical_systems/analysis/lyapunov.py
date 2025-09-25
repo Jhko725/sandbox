@@ -80,6 +80,7 @@ def lyapunov_gr(
         u1_tangent_gr, u1_tangent_norm = gram_schmidt(u1_tangent[0])
         log_norm_sum1 = log_norm_sum0 + jnp.log(u1_tangent_norm)
         carry_new = t1, (u1[0], u1_tangent_gr), log_norm_sum1
+        jax.debug.print("Time t0={t0}", t0=t0)
         return carry_new, (log_norm_sum1, u1[0])
 
     _, (log_norm_sums, u_vals) = jax.lax.scan(_inner, carry, t[1:])

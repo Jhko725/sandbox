@@ -1,0 +1,18 @@
+defaults:
+  - _self_
+  - data: lorenz63
+  - override hydra/launcher: submitit_slurm
+
+hydra:
+  launcher: 
+    timeout_min: 900
+    tasks_per_node: 1
+    gpus_per_node: 1
+
+experiment: vanilla
+downsample_factor: 2
+train_length: 2
+key: 0
+noise_std_relative: 0.0
+savedir: ./results_analysis/${.data.name}/sinkhorn/${.experiment}/
+savename: downsample=${.downsample_factor}_len=${.train_length}_key=${.key}.npy

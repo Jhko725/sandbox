@@ -15,3 +15,4 @@ results_analysis/
 multirun/
 # Virtual environments
 .venv
+figures/

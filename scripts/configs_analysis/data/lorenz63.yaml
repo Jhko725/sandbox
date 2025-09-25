@@ -1,0 +1,5 @@
+name: lorenz63
+checkpointpath: ./results/best/lorenz63
+trainpath: ./data/lorenz63_large.hdf5
+testpath: ./data/lorenz63_large_test.hdf5
+testpath_lyapunov: ./data/lorenz63_lyapunov_large_test.npz

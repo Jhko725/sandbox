@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import ott
 from jaxtyping import Array, Float
 from ott.tools import sinkhorn_divergence as ott_sinkhorn
 
@@ -68,3 +69,15 @@ def sinkhorn_divergence(p: Float[Array, "batch dim"], q: Float[Array, "batch dim
     Chaotic Systems. International Conference on Machine Learning. PMLR, 2024."
     """
     return ott_sinkhorn.sinkdiv(p, q, static_b=False)[0]
+
+
+@jax.jit
+def sinkhorn(x, y):
+    return ott.tools.sinkhorn_divergence.sinkhorn_divergence(
+        ott.geometry.pointcloud.PointCloud,
+        x=x,
+        y=y,
+        epsilon=1.0,
+        relative_epsilon="std",
+        solve_kwargs={"lse_mode": True, "max_iterations": 2000, "threshold": 0.001},
+    )[0]

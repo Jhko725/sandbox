@@ -1,0 +1,5 @@
+name: hyperchen05
+checkpointpath: ./results/best/hyperchen05
+trainpath: ./data/hyperchen05_train.hdf5
+testpath: ./data/hyperchen05_test.hdf5
+testpath_lyapunov: ./data/hyperchen05_lyapunov_test.npz
