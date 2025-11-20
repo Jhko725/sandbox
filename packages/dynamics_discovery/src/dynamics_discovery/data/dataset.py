@@ -47,12 +47,17 @@ class TimeSeriesDataset(eqx.Module):
         return self.t.shape[0]
 
     def __getitem__(self, idx):
-        return np.take(self.t, idx, axis=0), np.take(self.u, idx, axis=0)
+        return self.t[idx], self.u[idx]
 
     def downsample(self, downsample_factor: int) -> Self:
         return replace(
             self, t=self.t[:, ::downsample_factor], u=self.u[:, ::downsample_factor]
         )
+
+    def split_along_time(self, split_index: int) -> tuple[Self, Self]:
+        t1, t2 = self.t[:, :split_index], self.t[:, split_index:]
+        u1, u2 = self.u[:, :split_index], self.u[:, split_index:]
+        return replace(self, t=t1, u=u1), replace(self, t=t2, u=u2)
 
     def add_noise(self, noise_std_relative: float, *, seed: int = 0) -> Self:
         rng = np.random.default_rng(seed)

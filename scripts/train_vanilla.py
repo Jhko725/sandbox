@@ -13,8 +13,9 @@ def main(cfg: DictConfig) -> None:
 
     model = hydra.utils.instantiate(cfg.model)
     dataset, _ = (
-        TimeSeriesDataset.from_hdf5(cfg.data.dataset.loadpath)
+        TimeSeriesDataset(*TimeSeriesDataset.from_hdf5(cfg.data.dataset.loadpath)[::100])
         .downsample(cfg.data.downsample_factor)
+        .split_along_time(500)[0]
         .add_noise(cfg.data.noise_std_relative)
         .standardize()
     )
@@ -28,6 +29,7 @@ def main(cfg: DictConfig) -> None:
     trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
     model, _ = trainer.train(model, loader, MSELoss(), config=config_dict)
+
 
 if __name__ == "__main__":
     main()

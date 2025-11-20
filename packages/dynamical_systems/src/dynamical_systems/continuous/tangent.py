@@ -13,7 +13,9 @@ class TangentODE(AbstractODE):
     def dim(self) -> int:
         return self.ode.dim * (self.ode.dim + 1)
 
-    def rhs(self, t, u: tuple[Float[Array, " dim"], Float[Array, "dim dim"]], args):
+    def rhs(
+        self, t, u: tuple[Float[Array, " dim"], Float[Array, "dim num_tangents"]], args
+    ) -> tuple[Float[Array, " dim"], Float[Array, "dim num_tangents"]]:
         x, Tx = u
 
         def rhs_ode(x_):

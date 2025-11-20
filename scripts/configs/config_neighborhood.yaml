@@ -18,7 +18,7 @@ hydra:
     tasks_per_node: 1
     gpus_per_node: 1
 
-training:
-  wandb_project: ${data.dataset.name}_neighborhood
+# training:
+#   wandb_project: ${data.dataset.name}_neighborhood
 
 enable_x64: true

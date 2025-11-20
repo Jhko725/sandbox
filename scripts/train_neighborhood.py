@@ -18,8 +18,9 @@ def main(cfg: DictConfig) -> None:
 
     model = hydra.utils.instantiate(cfg.model)
     dataset, _ = (
-        TimeSeriesDataset.from_hdf5(cfg.data.dataset.loadpath)
+        TimeSeriesDataset(*TimeSeriesDataset.from_hdf5(cfg.data.dataset.loadpath)[::10])
         .downsample(cfg.data.downsample_factor)
+        .split_along_time(500)[0]
         .add_noise(cfg.data.noise_std_relative)
         .standardize()
     )
