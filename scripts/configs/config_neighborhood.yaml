@@ -11,14 +11,13 @@ neighborhood:
   num_neighbors: 30
   weight: 1.0
   chunk_size: null
+  radius: 0.3
+  dim_project: 2
 
 hydra:
   launcher: 
     timeout_min: 900
     tasks_per_node: 1
     gpus_per_node: 1
-
-# training:
-#   wandb_project: ${data.dataset.name}_neighborhood
 
 enable_x64: true

@@ -1,12 +1,13 @@
 import abc
 import math
+from functools import partial
 from typing import Any
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jaxtyping import Array, Float, Int, PyTree
+from jaxtyping import Array, ArrayLike, Float, Int, PyTree
 
 from dynamics_discovery.data.dataset import TimeSeriesDataset
 
@@ -150,6 +151,7 @@ class SegmentLoader(eqx.Module):
     dataset: TimeSeriesDataset
     segment_length: int
     batch_strategy: AbstractBatching
+    aux_data: PyTree[Float[ArrayLike, "samples time *rest"]] | None = None
 
     def __check_init__(self):
         if self.segment_length < 2:
@@ -182,6 +184,17 @@ class SegmentLoader(eqx.Module):
         return eqx.filter_vmap(get_trajectory_segments, in_axes=(None, 0, 0, None))(
             self.dataset, traj_idx, time_idx, self.segment_length
         )
+
+    def get_auxdata(self, traj_idx, time_idx):
+        @partial(jax.vmap, in_axes=(None, 0, 0))
+        def _get_aux_single(x, idx_traj, idx_time):
+            x_ = jax.lax.dynamic_index_in_dim(x, idx_traj, axis=0, keepdims=False)
+            return jax.lax.dynamic_index_in_dim(x_, idx_time, axis=0, keepdims=False)
+
+        def _get_aux(x):
+            return _get_aux_single(x, traj_idx, time_idx)
+
+        return jax.tree.map(_get_aux, self.aux_data)
 
     def linear_to_sample_indices(
         self, linear_indices: Int[Array, " {self.batch_size}"]
@@ -216,6 +229,10 @@ class SegmentLoader(eqx.Module):
         linear_indices, batch_state_next = self.batch_strategy.generate_batch(
             batch_state
         )
-        batch = self.get_segments(*self.linear_to_sample_indices(linear_indices))
+        sample_indices = self.linear_to_sample_indices(linear_indices)
+        batch = self.get_segments(*sample_indices)
+        if self.aux_data is not None:
+            batch_aux = self.get_auxdata(*sample_indices)
+            batch = (batch, batch_aux)
         loader_state_next = (batch_state_next,)
         return batch, loader_state_next
