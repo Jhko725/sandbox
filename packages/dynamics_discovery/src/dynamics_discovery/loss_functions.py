@@ -223,12 +223,12 @@ class PushforwardMatchingMSE(AbstractDynamicsLoss):
         args: Any = None,
         **kwargs: Any,
     ) -> FloatScalar:
-        (t_data, u_data), (M1, M2) = batch
+        (t_data, u_data), (M1, M2, masks) = batch
 
         batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
 
-        @partial(batched_vmap, in_axes=(0, 0, 0, 0), batch_size=batch_size)
-        def _loss(t_data_: Float[Array, " time"], u_data_, M1_, M2_):
+        @partial(batched_vmap, in_axes=(0, 0, 0, 0, 0), batch_size=batch_size)
+        def _loss(t_data_: Float[Array, " time"], u_data_, M1_, M2_, mask_):
             u_pred, evol_pred = tangent_evolution_matrix(
                 model,
                 u_data_[0],
@@ -238,9 +238,9 @@ class PushforwardMatchingMSE(AbstractDynamicsLoss):
             )
             mse = jnp.mean((u_pred - u_data_) ** 2)
 
-            return mse, jnp.mean((M1_.T @ evol_pred[0].T - M2_) ** 2)
+            return mse, jnp.mean((M1_.T @ evol_pred[0].T - M2_) ** 2) * mask_
 
-        mse_, DF_loss_ = _loss(t_data, u_data, M1, M2)
+        mse_, DF_loss_ = _loss(t_data, u_data, M1, M2, masks)
         mse_total = jnp.mean(mse_)
         DF_loss_total = jnp.mean(DF_loss_)
 

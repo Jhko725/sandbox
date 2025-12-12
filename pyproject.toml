@@ -57,3 +57,11 @@ select = ["E", "F", "I001"]
 combine-as-imports = true
 lines-after-imports = 2
 order-by-type = false
+
+[tool.pytest.ini_options]
+testpaths=["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

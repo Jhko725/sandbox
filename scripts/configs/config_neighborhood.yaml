@@ -11,8 +11,10 @@ neighborhood:
   num_neighbors: 30
   weight: 1.0
   chunk_size: null
-  radius: 0.3
+  radius: 2.0
   dim_project: 2
+  num_neighbor_threshold: 30
+  pca_score_cutoff: 0.075
 
 hydra:
   launcher: 

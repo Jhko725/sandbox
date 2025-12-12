@@ -1,5 +1,6 @@
 import hydra
 import jax
+import numpy as np
 from dynamics_discovery.data.dataset import TimeSeriesDataset
 from dynamics_discovery.data.loaders import SegmentLoader
 from dynamics_discovery.loss_functions import PushforwardMatchingMSE
@@ -26,17 +27,22 @@ def main(cfg: DictConfig) -> None:
         .add_noise(cfg.data.noise_std_relative)
         .standardize()
     )
-    aux = estimate_pushforward_matrices(
-        dataset, cfg.neighborhood.radius, cfg.neighborhood.dim_project
+    M1, M2, scores = estimate_pushforward_matrices(
+        dataset,
+        cfg.neighborhood.radius,
+        cfg.neighborhood.dim_project,
+        cfg.neighborhood.num_neighbor_threshold,
     )
+    masks = np.max(scores, axis=-1) < cfg.neighborhood.pca_score_cutoff
     loader = SegmentLoader(
         dataset,
         cfg.data.segment_length,
         hydra.utils.instantiate(cfg.data.batch_strategy),
-        aux_data=aux,
+        aux_data=(M1, M2, masks),
     )
 
     trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
+    trainer.savedir = trainer.savedir / f"cutoff={cfg.neighborhood.pca_score_cutoff}/"
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
     model, _ = trainer.train(
         model,

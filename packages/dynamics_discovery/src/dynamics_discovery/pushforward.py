@@ -13,8 +13,10 @@ def get_tangent_space_projector(
     du: Float[np.ndarray, "neighbors dim"],
     proj_dim: int = 2,
 ) -> Float[np.ndarray, "dim proj_dim"]:
-    vh = np.linalg.svd(du, full_matrices=False)[2]
-    return vh.T[:, :proj_dim]
+    _, s, vh = np.linalg.svd(du, full_matrices=False)
+    s2 = s * s
+    score = np.sum(s2[proj_dim:]) / np.sum(s2)
+    return vh.T[:, :proj_dim], score
 
 
 def least_squares(
@@ -47,7 +49,7 @@ def estimate_pushforward_matrices(
     dim_project: int,
     num_neighbor_threshold: int,
 ):
-    maps1, maps2, weights = [], [], []
+    maps1, maps2, scores = [], [], []
     tree = scspatial.KDTree(
         rearrange(dataset.u[:, :-1], "trajs time dim -> (trajs time) dim")
     )
@@ -67,13 +69,15 @@ def estimate_pushforward_matrices(
         ):
             maps1.append(np.zeros_like(u0, shape=(u0.shape[-1], dim_project)))
             maps2.append(np.zeros_like(u0, shape=(dim_project, u0.shape[-1])))
+            scores.append([1.0, 1.0])
         else:
             du0: Float[np.ndarray, "neighbors dim"] = dataset.u[*neigh_inds0] - u0
             du0_next = dataset.u[neigh_inds0[0], neigh_inds0[1] + 1] - u1
-            proj0: Float[np.ndarray, "dim dim_proj"] = get_tangent_space_projector(
-                du0, dim_project
-            )
-            proj1: Float[np.ndarray, "dim dim_proj"] = get_tangent_space_projector(
+
+            proj0: Float[np.ndarray, "dim dim_proj"]
+            proj0, score0 = get_tangent_space_projector(du0, dim_project)
+            proj1: Float[np.ndarray, "dim dim_proj"]
+            proj1, score1 = get_tangent_space_projector(
                 dataset.u[*neigh_inds1] - u1, dim_project
             )
 
@@ -84,7 +88,8 @@ def estimate_pushforward_matrices(
             )
             maps1.append(proj0)
             maps2.append(A @ proj1.T)
-        weights.append(len(neigh_inds0[0]))
+            scores.append([score0, score1])
+
     maps1: Float[np.ndarray, "trajs*time-1 dim dim_proj"] = np.stack(maps1, axis=0)
     maps2: Float[np.ndarray, "trajs*time-1 dim_proj dim"] = np.stack(maps2, axis=0)
     maps1 = rearrange(
@@ -97,9 +102,10 @@ def estimate_pushforward_matrices(
         "(trajs time) dim_proj dim -> trajs time dim_proj dim",
         trajs=dataset.u.shape[0],
     )
-    weights = rearrange(
-        np.asarray(weights),
-        "(trajs time) -> trajs time",
+    scores = rearrange(
+        np.asarray(scores),
+        "(trajs time) d -> trajs time d",
         trajs=dataset.u.shape[0],
     )
-    return maps1, maps2, weights
+
+    return maps1, maps2, scores
