@@ -6,11 +6,11 @@ from .ode_base import AbstractODE
 
 
 class FitzhughNagumo(AbstractODE):
+    dim: ClassVar[int] = 2
     a: float = 0.7
     b: float = 0.8
     c: float = 3
     z: float = -0.4
-    dim: ClassVar[int] = 2
 
     def rhs(self, t, u, args=None):
         del t, args

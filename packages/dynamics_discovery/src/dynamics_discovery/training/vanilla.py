@@ -34,9 +34,7 @@ class VanillaTrainer(BaseTrainer):
     def make_step_fn(
         self, loader: SegmentLoader, loss_fn: AbstractDynamicsLoss
     ) -> Callable:
-        print(loss_fn)
         loss_grad_fn = eqx.filter_value_and_grad(loss_fn, has_aux=True)
-        print(loss_grad_fn)
 
         @eqx.filter_jit
         def _step_fn(model_, args_, loader_state, opt_state):
