@@ -3,7 +3,7 @@ from itertools import product
 import numpy as np
 import scipy.spatial as scspatial
 from einops import rearrange
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from tqdm import tqdm
 
 from .data import TimeSeriesDataset
@@ -44,6 +44,107 @@ def total_least_squares(
 
 
 def estimate_pushforward_matrices(
+    dataset: TimeSeriesDataset,
+    radius: float,
+    dim_project: int,
+    num_neighbor_threshold: int,
+    rollout: int = 1,
+):
+    # Construct KDTree for efficient neighbor search
+    u_flat = rearrange(dataset.u, "trajs time dim -> (trajs time) dim")
+    dim = u_flat.shape[1]
+    tree = scspatial.KDTree(u_flat)
+
+    # Estimate tangent space for each point in dataset
+    tangent_projectors, scores = [], []
+    for u_i in tqdm(u_flat):
+        ind_neighbors = tree.query_ball_point(u_i, radius)
+
+        # Handle insufficient neighbors case - fill with dummy values
+        if len(ind_neighbors) < num_neighbor_threshold:
+            tangent_projectors.append(np.zeros_like(u_i, shape=(dim, dim_project)))
+            scores.append(-np.ones_like(u_i, shape=(dim, dim_project)))  # Fill with -1s
+        else:
+            du_i = u_flat[ind_neighbors] - u_i
+            projector_i, score_i = get_tangent_space_projector(du_i, dim_project)
+            tangent_projectors.append(projector_i)
+            scores.append(score_i)
+
+    tangent_projectors = rearrange(
+        np.asarray(tangent_projectors),
+        "(trajs time) dim dim_proj -> trajs time dim dim_proj",
+        trajs=dataset.u.shape[0],
+    )
+    scores = rearrange(
+        np.asarray(scores),
+        "(trajs time)-> trajs time",
+        trajs=dataset.u.shape[0],
+    )
+
+    # Compute mapping between tangent spaces
+    maps = []
+    for traj_ind, time_ind in tqdm(
+        product(range(dataset.u.shape[0]), range(dataset.u.shape[1] - rollout))
+    ):
+        us: Float[np.ndarray, "rollout+1 dim"] = dataset.u[
+            traj_ind, time_ind : time_ind + rollout + 1
+        ]
+        ind_neighbors = tree.query_ball_point(us[0], radius)
+
+        traj_ind_neigh, time_ind_neigh = np.divmod(ind_neighbors, dataset.u.shape[1])
+        # Discard neighbors at the end of trajectories (cannot evolve them in time)
+        mask_rollout_inrange = time_ind_neigh + rollout < dataset.u.shape[1]
+
+        # Handle insufficient neighbors
+        if np.sum(mask_rollout_inrange) < num_neighbor_threshold:
+            maps.append(np.zeros_like(us, shape=(rollout, dim_project, dim)))
+            continue
+
+        # Find time evolution of the radius r neighborhood
+        traj_ind_neigh: Int[np.ndarray, " neighbors"] = traj_ind_neigh[
+            mask_rollout_inrange
+        ]
+        time_ind_neigh: Int[np.ndarray, " neighbors"] = time_ind_neigh[
+            mask_rollout_inrange
+        ]
+
+        u_neighs: Float[np.ndarray, "neighbors rollout+1 dim"] = np.stack(
+            [
+                dataset.u[i, j : j + rollout + 1]
+                for i, j in zip(traj_ind_neigh, time_ind_neigh)
+            ],
+            axis=0,
+        )
+        projectors: Float[np.ndarray, "rollout+1 dim dim_proj"] = tangent_projectors[
+            traj_ind, time_ind : time_ind + rollout + 1
+        ]
+
+        dus = u_neighs - us
+
+        # Map time evolution of the neighborhood to respective tangent planes
+        dus_proj: Float[np.ndarray, "neighbors rollout+1 dim_proj"] = np.einsum(
+            "abi,bij->abj", dus, projectors
+        )
+        map_i: Float[np.ndarray, "rollout dim_proj dim_proj"] = np.stack(
+            [
+                least_squares(dus_proj[:, 0], dus_proj[:, i])
+                for i in range(1, rollout + 1)
+            ],
+            axis=0,
+        )
+        map_i: Float[np.ndarray, "rollout dim_proj dim"] = map_i @ rearrange(
+            projectors[1:], "batch dim dim_proj -> batch dim_proj dim"
+        )
+        maps.append(map_i)
+    maps = rearrange(
+        np.stack(maps, axis=0),
+        "(trajs time) roll dim_proj dim -> trajs time roll dim_proj dim",
+        trajs=dataset.u.shape[0],
+    )
+    return tangent_projectors[:, :-rollout], maps, scores[:, :-rollout]
+
+
+def estimate_pushforward_matrices_old(
     dataset: TimeSeriesDataset,
     radius: float,
     dim_project: int,

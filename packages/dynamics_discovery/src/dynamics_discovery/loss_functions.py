@@ -9,6 +9,7 @@ import jax
 import jax.numpy as jnp
 from dynamical_systems.analysis.jacobian import jacobian
 from dynamical_systems.continuous import AbstractODE, TangentODE
+from einops import rearrange
 from jaxtyping import Array, Float, PyTree
 from ott.utils import batched_vmap
 
@@ -237,8 +238,8 @@ class PushforwardMatchingMSE(AbstractDynamicsLoss):
                 # model.stepsize_controller,
             )
             mse = jnp.mean((u_pred - u_data_) ** 2)
-
-            return mse, jnp.mean((M1_.T @ evol_pred[0].T - M2_) ** 2) * mask_
+            evol_pred = rearrange(evol_pred, "rollout dim1 dim2->rollout dim2 dim1")
+            return mse, jnp.mean((M1_.T @ evol_pred - M2_) ** 2) * mask_
 
         mse_, DF_loss_ = _loss(t_data, u_data, M1, M2, masks)
         mse_total = jnp.mean(mse_)

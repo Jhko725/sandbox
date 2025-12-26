@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import equinox as eqx
 import numpy as np
@@ -30,6 +30,7 @@ class BaseTrainer(ABC):
         savename: str,
         wandb_entity: str | None = None,
         wandb_project: str | None = None,
+        wandb_mode: Literal["online", "offline", "disabled", "shared"] = "online",
     ):
         self.optimizer = optimizer
         self.max_epochs = max_epochs
@@ -37,7 +38,7 @@ class BaseTrainer(ABC):
         self.savedir = Path(savedir)
         self.savename = savename
 
-        self.logger = wandb.init(entity=wandb_entity, project=wandb_project)
+        self.logger = wandb.init(entity=wandb_entity, project=wandb_project, mode = wandb_mode)
 
     def train(
         self,

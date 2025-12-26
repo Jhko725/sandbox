@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
 
 import equinox as eqx
 import optax
@@ -26,9 +27,16 @@ class VanillaTrainer(BaseTrainer):
         savename: str = "checkpoint.eqx",
         wandb_entity: str | None = None,
         wandb_project: str | None = None,
+        wandb_mode: Literal["online", "offline", "disabled", "shared"] = "online",
     ):
         super().__init__(
-            optimizer, max_epochs, savedir, savename, wandb_entity, wandb_project
+            optimizer,
+            max_epochs,
+            savedir,
+            savename,
+            wandb_entity,
+            wandb_project,
+            wandb_mode,
         )
 
     def make_step_fn(

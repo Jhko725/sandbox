@@ -32,8 +32,9 @@ def main(cfg: DictConfig) -> None:
         cfg.neighborhood.radius,
         cfg.neighborhood.dim_project,
         cfg.neighborhood.num_neighbor_threshold,
+        cfg.data.segment_length - 1,
     )
-    masks = np.max(scores, axis=-1) < cfg.neighborhood.pca_score_cutoff
+    masks = np.logical_and(scores < cfg.neighborhood.pca_score_cutoff, scores >= 0)
     loader = SegmentLoader(
         dataset,
         cfg.data.segment_length,
