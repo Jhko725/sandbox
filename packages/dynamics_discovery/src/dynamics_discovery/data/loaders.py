@@ -216,7 +216,7 @@ class SegmentLoader(eqx.Module):
         batch_state_init = self.batch_strategy.init(self.num_total_segments)
         return (batch_state_init,)
 
-    def load_batch(self, loader_state: PyTree) -> tuple[PyTree[Array], PyTree]:
+    def load_batch(self, loader_state: PyTree) -> tuple[PyTree[Array], ...]:
         """
         Main logic to load a single batch of time series data segments.
 

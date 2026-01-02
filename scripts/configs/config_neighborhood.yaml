@@ -6,8 +6,10 @@ defaults:
   - _self_
 
 neighborhood:
-  second_order: false
+  second_order: true
   use_taylor_mode: false
+  r_min: 0.4
+  r_max: 0.6
   num_neighbors: 30
   weight: 1.0
   chunk_size: null
@@ -15,7 +17,7 @@ neighborhood:
   dim_project: 2
   num_neighbor_threshold: 30
   pca_score_cutoff: 0.3
-  rollout: 1
+  rollout: 4
 
 hydra:
   launcher: 

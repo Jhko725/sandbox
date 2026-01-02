@@ -7,9 +7,17 @@ import jax
 import jax.numpy as jnp
 import scipy.spatial as scspatial
 from dynamical_systems.continuous import AbstractODE
+from einops import rearrange
 from jax.experimental import jet
-from jaxtyping import Array, Float, Int, PRNGKeyArray, PyTree
+from jaxtyping import Array, ArrayLike, Bool, Float, Int, PRNGKeyArray, PyTree
 from ott.utils import batched_vmap
+
+from dynamics_discovery.custom_types import FloatScalar, IntScalarLike
+from dynamics_discovery.data import TimeSeriesDataset
+from dynamics_discovery.data.loaders import (
+    AbstractBatching,
+    SegmentLoader,
+)
 
 from .custom_types import FloatScalar
 from .data import TimeSeriesDataset
@@ -19,40 +27,100 @@ from .models.abstract import AbstractDynamicsModel
 from .models.neuralode import NeuralODE
 
 
+class AdjacencyMatrix(eqx.Module):
+    indptr: Float[ArrayLike, " points+1"]
+    indices: Float[ArrayLike, " total_neighbors"]
+    """Adjacency matrix stored in CSR sparse array format."""
+
+
+@partial(jax.jit, static_argnames="n_samples")
+def sample_neighbor_inds(
+    sample_inds: IntScalarLike | Int[Array, " batch"],
+    adjacency_matrix: AdjacencyMatrix,
+    n_samples: int,
+    num_neighbor_cutoff: int = 30,
+    key: PRNGKeyArray = jax.random.key(0),
+) -> tuple[Int[Array, " n_samples"], bool]:
+    sample_inds = jnp.asarray(sample_inds)
+    in_shape = sample_inds.shape
+    sample_inds: Int[Array, " batch"] = jnp.atleast_1d(sample_inds)
+
+    low, high = jax.vmap(
+        lambda x: jax.lax.dynamic_slice_in_dim(adjacency_matrix.indptr, x, 2),
+        out_axes=-1,
+    )(sample_inds)
+
+    sufficient_neighbors: Bool[Array, " batch"] = high - low > num_neighbor_cutoff
+
+    ptrs: Int[Array, "batch n_samples"] = jax.random.randint(
+        key,
+        minval=jnp.expand_dims(low, -1),
+        maxval=jnp.expand_dims(high, -1),
+        shape=(sample_inds.shape[0], n_samples),
+    )
+
+    inds: Int[Array, "batch n_samples"] = jax.vmap(
+        jax.vmap(
+            lambda x: jax.lax.dynamic_index_in_dim(
+                adjacency_matrix.indices, x, keepdims=False
+            )
+        ),
+    )(ptrs)
+
+    inds = jnp.where(
+        jnp.expand_dims(sufficient_neighbors, -1), inds, jnp.zeros_like(inds)
+    )
+
+    return inds.reshape(in_shape + (n_samples,)), sufficient_neighbors.reshape(in_shape)
+
+
 class NeighborhoodSegmentLoader(SegmentLoader):
+    r_min: float = eqx.field(static=True)
+    r_max: float = eqx.field(static=True)
     num_neighbors: int = eqx.field(static=True)
-    _tree: scspatial.KDTree = eqx.field(static=True)
+    neighbor_cutoff: int = eqx.field(static=True)
+
+    _adjacency_matrix: AdjacencyMatrix
 
     def __init__(
         self,
         dataset: TimeSeriesDataset,
         segment_length: int,
+        r_min: float,
+        r_max: float,
         num_neighbors: int,
+        neighbor_cutoff: int,
         batch_strategy: AbstractBatching,
     ):
         super().__init__(dataset, segment_length, batch_strategy)
+        self.r_min = r_min
+        self.r_max = r_max
         self.num_neighbors = num_neighbors
-        self._tree = self._create_tree()
+        self.neighbor_cutoff = neighbor_cutoff
 
-    def _create_tree(self):
-        return scspatial.KDTree(
-            self.dataset.u[:, : -self.segment_length + 1].reshape(
-                -1, self.dataset.u.shape[-1]
+        self._adjacency_matrix = self._build_adjacency_matrix()
+
+    def _build_adjacency_matrix(self):
+        tree = scspatial.KDTree(
+            rearrange(
+                self.dataset.u[:, : -self.segment_length + 1],
+                "traj time dim -> (traj time) dim",
             )
         )
+        distance_matrix = tree.sparse_distance_matrix(tree, self.r_max)
+        within_range = distance_matrix >= self.r_min
+        return AdjacencyMatrix(within_range.indptr, within_range.indices)
 
-    def get_neighbors_linear_indices(
-        self, u0_batch: Float[Array, "{self.batch_size} dim"]
-    ):
-        result_shape = jax.ShapeDtypeStruct(
-            (u0_batch.shape[0], self.num_neighbors), jnp.int64
-        )
-        return jax.pure_callback(
-            lambda u0_: self._tree.query(u0_, self.num_neighbors + 1)[1][:, 1:],
-            result_shape,
-            u0_batch,
-            vmap_method="expand_dims",
-        )
+    def init(self) -> PyTree:
+        """
+        Returns the initial loader_state to be fed into the first call of
+        `self.load_batch`.
+
+        This is inspired by optax's optimizer.init function.
+        """
+        batch_state_init = self.batch_strategy.init(self.num_total_segments)
+        key = jax.random.key(0)
+        return (batch_state_init, key)
 
     def load_batch(
         self, loader_state: PRNGKeyArray
@@ -63,15 +131,32 @@ class NeighborhoodSegmentLoader(SegmentLoader):
             Array, "{self.batch_size} {self.segment_length} {self.num_neighbors} dim"
         ],
     ]:
-        (t_batch, u_batch), loader_state_next = super().load_batch(loader_state)
-        nn_linear_indices: Int[Array, "{self.batch_size} {self.num_neighbors} dim"] = (
-            self.get_neighbors_linear_indices(u_batch[:, 0])
+        (batch_state, key) = loader_state
+        linear_indices, batch_state_next = self.batch_strategy.generate_batch(
+            batch_state
         )
+
+        sample_indices = self.linear_to_sample_indices(linear_indices)
+        t_batch, u_batch = self.get_segments(*sample_indices)
+
+        key, key_next = jax.random.split(key)
+        neighbor_linear_indices, mask = sample_neighbor_inds(
+            linear_indices,
+            self._adjacency_matrix,
+            self.num_neighbors,
+            self.neighbor_cutoff,
+            key,
+        )
+
         _, u_nn_batch = eqx.filter_vmap(self.get_segments)(
-            *self.linear_to_sample_indices(nn_linear_indices)
+            *self.linear_to_sample_indices(neighbor_linear_indices)
         )
-        u_nn_batch = jnp.permute_dims(u_nn_batch, (0, 2, 1, 3))
-        return (t_batch, u_batch, u_nn_batch), loader_state_next
+        u_nn_batch = rearrange(
+            u_nn_batch, "batch neigh time dim -> batch time neigh dim"
+        )
+
+        loader_state_next = (batch_state_next, key_next)
+        return (t_batch, u_batch, u_nn_batch, mask), loader_state_next
 
 
 class NeuralNeighborhoodFlow(eqx.Module):
@@ -165,10 +250,11 @@ class NeuralNeighborhoodFlow(eqx.Module):
 
 
 class NeighborhoodMSELoss(AbstractDynamicsLoss):
+    neighbor_traj_length: int = eqx.field(static=True)
     weight: float = 1.0
     batch_size: int | None = None
     multiterm: bool = False
-    second_order: bool = False
+    second_order: bool = eqx.field(static=True, default=True)
     use_taylor_mode: bool = False
 
     def __call__(
@@ -177,23 +263,23 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
         batch: PyTree[Float[Array, "batch ..."]],
         args: Any = None,
         **kwargs: Any,
-    ) -> FloatScalar:
-        t_data: Float[Array, "batch time_batch"]
-        u_data: Float[Array, "batch time_batch dim"]
-        u_nn_data: Float[Array, "batch time_batch neighbors dim"]
-        # weights: Float[Array, "batch neighbors"]
-        # t_data, u_data, du_data, weights = batch
-        t_data, u_data, u_nn_data = batch
+    ) -> tuple[FloatScalar, dict[str, Array]]:
+        t_data: Float[Array, "batch time"]
+        u_data: Float[Array, "batch time dim"]
+        u_nn_data: Float[Array, "batch time_neighbors neighbors dim"]
+        mask: Bool[Array, "batch"]
+
+        t_data, u_data, u_nn_data, mask = batch
 
         batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
-        len_neighbors = u_nn_data.shape[1]
+
         model_nn = NeuralNeighborhoodFlow(
             model, self.second_order, self.use_taylor_mode
         )
 
-        @partial(batched_vmap, in_axes=(0, 0, 0), batch_size=batch_size)
+        @partial(batched_vmap, in_axes=0, batch_size=batch_size)
         def _solve(
-            t: Float[Array, " time_batch_neighbors"],
+            t: Float[Array, " time_neighbors"],
             u0: Float[Array, " dim"],
             du0: Float[Array, " neighbors dim"],
         ):
@@ -203,7 +289,7 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
                 **kwargs,
             )
 
-        @partial(batched_vmap, in_axes=(0, 0), batch_size=batch_size)
+        @partial(batched_vmap, in_axes=0, batch_size=batch_size)
         def _solve_ode(
             t: Float[Array, " {time_batch-time_batch_neighbors}"],
             u0: Float[Array, " dim"],
@@ -214,27 +300,30 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
                 **kwargs,
             )
 
-        du_nn_data = u_nn_data - jnp.expand_dims(u_data, 2)
+        u_nn_data = u_nn_data[:, : self.neighbor_traj_length]
+        du_nn_data = u_nn_data - jnp.expand_dims(
+            u_data[:, : self.neighbor_traj_length], -2
+        )
         u_pred, du_pred = _solve(
-            t_data[:, :len_neighbors], u_data[:, 0], du_nn_data[:, 0]
+            t_data[:, : self.neighbor_traj_length], u_data[:, 0], du_nn_data[:, 0]
+        )
+        u_nn_pred: Float[Array, "batch time neighbors dim"] = (
+            jnp.expand_dims(u_pred, 2) + du_pred
         )
 
-        # u_nn_pred = jnp.expand_dims(u_pred, 2) + du_pred
-
+        mse_neighbors = jnp.sum(
+            jnp.mean((u_nn_pred - u_nn_data) ** 2, axis=(1, 2, 3)) * mask
+        ) / jnp.clip(jnp.sum(mask), min=1)  # Trick do avoid divide by zero
         # mse_neighbors = jnp.mean(
-        #     jnp.sum(
-        #         jnp.mean((u_nn_pred - u_nn_data) ** 2, axis=(1, 3)) * weights, axis=-1
+        #     jax.vmap(jax.vmap(maximum_mean_discrepancy))(
+        #         u_nn_pred[:, 1:], u_nn_data[:, 1:]
         #     )
-        #     # / jnp.clip(
-        #     #     jnp.sum(weights, axis=-1), min=1
-        #     # )  # Trick do avoid divide by zero
         # )
-        # mse_neighbors = jnp.mean((u_nn_pred - u_nn_data) ** 2)
-        mse_neighbors = jnp.mean((du_pred - du_nn_data) ** 2)
 
+        u_pred = _solve_ode(t_data, u_data[:, 0])
         # u_pred_rest = _solve_ode(t_data[:, len_neighbors - 1 :], u_pred[:, -1])
-        # u_pred_total = jnp.concatenate((u_pred, u_pred_rest[:, 1:]), axis=1)
-        # mse_total = jnp.mean((u_pred_total - u_data) ** 2)
+        # u_pred_all = jnp.concatenate((u_pred, u_pred_rest[:, 1:]), axis=1)
+        # mse_total = jnp.mean((u_pred_all - u_data) ** 2)
         mse_total = jnp.mean((u_pred - u_data) ** 2)
 
         if self.multiterm:
@@ -245,11 +334,6 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
             "mse": mse_total,
             "mse_neighbors": mse_neighbors,
         }
-
-        # return (mse_total + n_neighbors * mse_neighbors) / (n_neighbors + 1), {
-        #     "mse": mse_total,
-        #     "mse_neighbors": mse_neighbors,
-        # }
 
 
 class NormalODE(AbstractODE):
