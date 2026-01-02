@@ -272,6 +272,7 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
         t_data, u_data, u_nn_data, mask = batch
 
         batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
+        segment_length = u_data.shape[1]
 
         model_nn = NeuralNeighborhoodFlow(
             model, self.second_order, self.use_taylor_mode
@@ -319,11 +320,13 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
         #         u_nn_pred[:, 1:], u_nn_data[:, 1:]
         #     )
         # )
+        if segment_length > self.neighbor_traj_length:
+            u_pred_rest = _solve_ode(
+                t_data[:, self.neighbor_traj_length - 1 :], u_pred[:, -1]
+            )
+            u_pred = jnp.concatenate((u_pred, u_pred_rest[:, 1:]), axis=1)
+        # u_pred = _solve_ode(t_data, u_data[:, 0])
 
-        u_pred = _solve_ode(t_data, u_data[:, 0])
-        # u_pred_rest = _solve_ode(t_data[:, len_neighbors - 1 :], u_pred[:, -1])
-        # u_pred_all = jnp.concatenate((u_pred, u_pred_rest[:, 1:]), axis=1)
-        # mse_total = jnp.mean((u_pred_all - u_data) ** 2)
         mse_total = jnp.mean((u_pred - u_data) ** 2)
 
         if self.multiterm:
