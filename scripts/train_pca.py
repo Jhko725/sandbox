@@ -7,7 +7,8 @@ from dynamics_discovery.loss_functions import PushforwardMatchingMSE
 from dynamics_discovery.pushforward import (
     estimate_pushforward_matrices,
 )
-from dynamics_discovery.training.vanilla import VanillaTrainer
+from dynamics_discovery.training import BaseTrainer
+from dynamics_discovery.training.multiterm import MultitermTrainer
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -16,6 +17,8 @@ from omegaconf import DictConfig, OmegaConf
 )
 def main(cfg: DictConfig) -> None:
     jax.config.update("jax_enable_x64", cfg.enable_x64)
+    # Comment out when submitting jobs via slurm
+    jax.config.update("jax_default_device", jax.devices("gpu")[3])
 
     model = hydra.utils.instantiate(cfg.model)
     dataset, _ = (
@@ -42,13 +45,22 @@ def main(cfg: DictConfig) -> None:
         aux_data=(M1, M2, masks),
     )
 
-    trainer: VanillaTrainer = hydra.utils.instantiate(cfg.training)
-    trainer.savedir = trainer.savedir / f"cutoff={cfg.neighborhood.pca_score_cutoff}/"
+    trainer: BaseTrainer = hydra.utils.instantiate(cfg.training)
+    trainer.savedir = (
+        trainer.savedir
+        / f"radius={cfg.neighborhood.radius}_rollout={cfg.neighborhood.rollout}"
+        / f"weight={cfg.neighborhood.weight}"
+    )
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
+
     model, _ = trainer.train(
         model,
         loader,
-        PushforwardMatchingMSE(weight=cfg.neighborhood.weight),
+        PushforwardMatchingMSE(
+            weight=cfg.neighborhood.weight,
+            rollout=cfg.neighborhood.rollout,
+            multiterm=True if isinstance(trainer, MultitermTrainer) else False,
+        ),
         config=config_dict,
     )
 

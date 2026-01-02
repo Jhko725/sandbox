@@ -134,9 +134,16 @@ class MultitermTrainer(BaseTrainer):
         savename: str = "checkpoint.eqx",
         wandb_entity: str | None = None,
         wandb_project: str | None = None,
+        wandb_mode: Literal["online", "offline", "disabled", "shared"] = "online",
     ):
         super().__init__(
-            optimizer, max_epochs, savedir, savename, wandb_entity, wandb_project
+            optimizer,
+            max_epochs,
+            savedir,
+            savename,
+            wandb_entity,
+            wandb_project,
+            wandb_mode,
         )
         self.gradient_strategy = gradient_strategy
         self.gradient_weights = (
@@ -144,11 +151,28 @@ class MultitermTrainer(BaseTrainer):
         )
 
     def make_step_fn(
-        self, loader: SegmentLoader, loss_fn: AbstractDynamicsLoss
+        self,
+        loader: SegmentLoader,
+        loss_fn: AbstractDynamicsLoss,
+        metric_fn_dict: dict[str, Callable] | None = None,
     ) -> Callable:
         loss_grad_fn = filter_value_and_grad_ConFIG(
             loss_fn, self.gradient_weights, has_aux=True
         )
+
+        ## TODO: find better place to place this function; probably will need to
+        # refactor class hierarchy
+        if metric_fn_dict is None:
+
+            def metric_fn(model_, batch, args_) -> dict[str, Array]:
+                return dict()
+        else:
+
+            def metric_fn(model_, batch, args_) -> dict[str, Array]:
+                return {
+                    name: fn(model_, batch, args_)
+                    for name, fn in metric_fn_dict.items()
+                }
 
         @eqx.filter_jit
         def _step_fn(model_, args_, loader_state, opt_state):
@@ -157,6 +181,8 @@ class MultitermTrainer(BaseTrainer):
             updates, opt_state_next = self.optimizer.update(
                 grads, opt_state, eqx.filter(model_, eqx.is_inexact_array)
             )
+            metrics_dict = metric_fn(model_, batch, args_)
+            log_dict = log_dict | metrics_dict
             model_ = eqx.apply_updates(model_, updates)
             return loss, log_dict, model_, loader_state_next, opt_state_next
 

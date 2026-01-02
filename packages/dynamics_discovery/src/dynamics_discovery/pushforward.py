@@ -63,7 +63,7 @@ def estimate_pushforward_matrices(
         # Handle insufficient neighbors case - fill with dummy values
         if len(ind_neighbors) < num_neighbor_threshold:
             tangent_projectors.append(np.zeros_like(u_i, shape=(dim, dim_project)))
-            scores.append(-np.ones_like(u_i, shape=(dim, dim_project)))  # Fill with -1s
+            scores.append(-np.ones_like(u_i, shape=()))  # Fill with -1s
         else:
             du_i = u_flat[ind_neighbors] - u_i
             projector_i, score_i = get_tangent_space_projector(du_i, dim_project)

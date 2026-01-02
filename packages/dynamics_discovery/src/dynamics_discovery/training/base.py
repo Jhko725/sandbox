@@ -38,7 +38,9 @@ class BaseTrainer(ABC):
         self.savedir = Path(savedir)
         self.savename = savename
 
-        self.logger = wandb.init(entity=wandb_entity, project=wandb_project, mode = wandb_mode)
+        self.logger = wandb.init(
+            entity=wandb_entity, project=wandb_project, mode=wandb_mode
+        )
 
     def train(
         self,
@@ -46,13 +48,14 @@ class BaseTrainer(ABC):
         loader: SegmentLoader,
         loss_fn: AbstractDynamicsLoss,
         args: Any = None,
+        metric_fns: dict[str, Callable] | None = None,
         *,
         config: dict | None = None,
         **kwargs,
     ):
         print(loss_fn)
         print(eqx.filter_value_and_grad(loss_fn, has_aux=True))
-        step_fn = self.make_step_fn(loader, loss_fn)
+        step_fn = self.make_step_fn(loader, loss_fn, metric_fns)
 
         opt_state = self.optimizer.init(eqx.filter(model, eqx.is_inexact_array))
         loader_state = loader.init()
@@ -96,7 +99,12 @@ class BaseTrainer(ABC):
         return model, np.asarray(loss_history)
 
     @abstractmethod
-    def make_step_fn(self, loss_fn: AbstractDynamicsLoss) -> Callable: ...
+    def make_step_fn(
+        self,
+        loader: SegmentLoader,
+        loss_fn: AbstractDynamicsLoss,
+        metric_fn_dict: dict[str, Callable] | None,
+    ) -> Callable: ...
 
     @property
     def savedir(self) -> Path:

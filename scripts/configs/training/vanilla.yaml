@@ -8,4 +8,4 @@ savedir: ./results/smaller_datasets/${..data.dataset.name}/downsample=${..data.d
 savename: lr=${.optimizer.learning_rate}_noise=${..data.noise_std_relative}_key=${..model.key}
 wandb_entity: jhko725
 wandb_project: ${..data.dataset.name}_smaller_data
-wandb_mode: offline
+wandb_mode: online

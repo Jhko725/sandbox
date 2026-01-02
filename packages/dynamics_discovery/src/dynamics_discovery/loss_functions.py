@@ -214,6 +214,7 @@ class TangentEvolutionMatchingMSE(AbstractDynamicsLoss):
 
 class PushforwardMatchingMSE(AbstractDynamicsLoss):
     weight: float
+    rollout: int = 2
     batch_size: int | None = None
     multiterm: bool = False
 
@@ -229,24 +230,30 @@ class PushforwardMatchingMSE(AbstractDynamicsLoss):
         batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
 
         @partial(batched_vmap, in_axes=(0, 0, 0, 0, 0), batch_size=batch_size)
-        def _loss(t_data_: Float[Array, " time"], u_data_, M1_, M2_, mask_):
-            u_pred, evol_pred = tangent_evolution_matrix(
+        def _DF_loss(t_data_: Float[Array, " time"], u_data_, M1_, M2_, mask_):
+            _, evol_pred = tangent_evolution_matrix(
                 model,
                 u_data_[0],
-                t_data_,
+                t_data_[: self.rollout + 1],
                 # model.solver,
                 # model.stepsize_controller,
             )
-            mse = jnp.mean((u_pred - u_data_) ** 2)
+            # mse = jnp.mean((u_pred - u_data_) ** 2)
             evol_pred = rearrange(evol_pred, "rollout dim1 dim2->rollout dim2 dim1")
-            return mse, jnp.mean((M1_.T @ evol_pred - M2_) ** 2) * mask_
+            return jnp.mean((M1_.T @ evol_pred - M2_[: self.rollout]) ** 2) * mask_
 
-        mse_, DF_loss_ = _loss(t_data, u_data, M1, M2, masks)
+        @partial(batched_vmap, in_axes=(0, 0), batch_size=batch_size)
+        def _mse(t_data_: Float[Array, " time"], u_data_):
+            u_pred = model.solve(t_data_, u_data_[0], args, **kwargs)
+            return jnp.mean((u_pred - u_data_) ** 2)
+
+        mse_ = _mse(t_data, u_data)
+        DF_loss_ = _DF_loss(t_data, u_data, M1, M2, masks)
         mse_total = jnp.mean(mse_)
         DF_loss_total = jnp.mean(DF_loss_)
 
         if self.multiterm:
-            loss = [mse_total, DF_loss_total]
+            loss = [mse_total, self.weight * DF_loss_total]
         else:
             loss = mse_total + self.weight * DF_loss_total
         return loss, {

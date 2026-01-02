@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 from jax.scipy.signal import correlate
 from jaxtyping import Array, Float
@@ -47,15 +48,15 @@ def hellinger_distance(
 
 
 def mean_spectral_hellinger_distance(
-    x1: Float[Array, " time"],
-    x2: Float[Array, " time"],
+    x1: Float[Array, "time dim"],
+    x2: Float[Array, "time dim"],
     standardize: bool = True,
     smoothing: int | None = 20,
 ) -> Float[Array, ""]:
     """This is a pure JAX implementation of the mean spectral hellinger distance.
 
-    To use the function on data with multiple dimensions, simply vmap this function
-    over the dimension axis and average the result.
+    To use the function on batched data, simply vmap this function over the batch axis
+    and average the result.
 
     The implementation is heavily inspired from that of Durstewitz's group (see [1],
     [2]) where the power spectrum is smooothed before being used to calculate the
@@ -71,6 +72,10 @@ def mean_spectral_hellinger_distance(
     [2] https://github.com/DurstewitzLab/ChaosRNN/blob/main/evaluation/pse.py#L65
     [3] https://github.com/GilpinLab/dysts/blob/master/dysts/metrics.py#L922
     """
-    ps1 = power_spectrum1d(x1, standardize=standardize, smoothing=smoothing)
-    ps2 = power_spectrum1d(x2, standardize=standardize, smoothing=smoothing)
-    return hellinger_distance(ps1, ps2)
+
+    def _spectral_hellinger_1d(x1_, x2_):
+        ps1 = power_spectrum1d(x1_, standardize=standardize, smoothing=smoothing)
+        ps2 = power_spectrum1d(x2_, standardize=standardize, smoothing=smoothing)
+        return hellinger_distance(ps1, ps2)
+
+    return jnp.mean(jax.vmap(_spectral_hellinger_1d, in_axes=-1)(x1, x2), axis=0)
