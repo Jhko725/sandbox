@@ -89,4 +89,6 @@ class NeuralODE(AbstractDynamicsModel, AbstractODE):
         self, ts: Float[Array, " time"], u0: ODEState, args: Any = None, **kwargs
     ) -> StackedODEState:
         del args
-        return self._diffeqsolve(ts[0], ts[-1], u0, saveat=dfx.SaveAt(ts=ts), **kwargs)
+        return self._diffeqsolve(
+            ts[0], ts[-1], u0, saveat=dfx.SaveAt(ts=ts), max_steps=16384, **kwargs
+        )

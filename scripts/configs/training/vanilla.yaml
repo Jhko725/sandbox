@@ -2,7 +2,7 @@ _target_: dynamics_discovery.training.VanillaTrainer
 optimizer:
   _target_: optax.adabelief
   learning_rate: 2e-3
-max_epochs: 5000
+max_epochs: 2000
 #savedir: ./results/sweep/${..data.dataset.name}/downsample=${..data.downsample_factor}/len=${..data.segment_length}
 savedir: ./results/smaller_datasets/${..data.dataset.name}/downsample=${..data.downsample_factor}/len=${..data.segment_length}
 savename: lr=${.optimizer.learning_rate}_noise=${..data.noise_std_relative}_key=${..model.key}

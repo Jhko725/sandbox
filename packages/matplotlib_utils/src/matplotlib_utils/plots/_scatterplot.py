@@ -11,9 +11,10 @@ def colored_scatterplot(
     figsize: tuple[int, int] = (10, 5),
     *,
     colorbar_pad: float = 0.15,
-    colorbar_width: float = 0.02,
+    colorbar_shrink: float = 1.0,
     vmin_percentile: float | None = 2.5,
     vmax_percentile: float | None = 97.5,
+    horizontal: bool = True,
     **scatter_kwargs,
 ):
     ## Validate function arguments
@@ -39,7 +40,8 @@ def colored_scatterplot(
         raise ValueError("Arguments vmax_percentile and vmax are mutually exclusive")
 
     ## Plot setup
-    fig, axes = plt.subplots(1, n_plots, figsize=figsize, subplot_kw=subplot_kw)
+    grid_shape = (1, n_plots) if horizontal else (n_plots, 1)
+    fig, axes = plt.subplots(*grid_shape, figsize=figsize, subplot_kw=subplot_kw)
     if not isinstance(axes, np.ndarray):
         axes = np.array([axes])
 
@@ -53,14 +55,7 @@ def colored_scatterplot(
     for ax, data_i, c_i in zip(axes, data, colors):
         plot = ax.scatter(*data_i, c=c_i, **scatter_kwargs)
 
-    ## Colorbar setup
-    cax = fig.add_axes(
-        [
-            axes[-1].get_position().x1 + colorbar_pad,
-            axes[-1].get_position().y0,
-            colorbar_width,
-            axes[-1].get_position().height,
-        ]
+    fig.colorbar(
+        plot, ax=axes.ravel().tolist(), pad=colorbar_pad, shrink=colorbar_shrink
     )
-    fig.colorbar(plot, ax=axes[-1], cax=cax)
     return fig

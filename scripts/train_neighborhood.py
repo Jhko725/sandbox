@@ -16,7 +16,7 @@ from omegaconf import DictConfig, OmegaConf
 def main(cfg: DictConfig) -> None:
     jax.config.update("jax_enable_x64", cfg.enable_x64)
     # Comment out when submitting jobs via slurm
-    jax.config.update("jax_default_device", jax.devices("gpu")[3])
+    # jax.config.update("jax_default_device", jax.devices("gpu")[3])
 
     model = hydra.utils.instantiate(cfg.model)
     dataset, _ = (
