@@ -1,0 +1,14 @@
+defaults:
+  - base
+
+_target_: dynamics_discovery.models.NeuralODE
+width: 64
+depth: 3
+activation: 
+  _target_: hydra.utils.get_method
+  path: jax.nn.gelu
+solver: 
+  _target_: diffrax.Euler
+rtol: null
+atol: null
+dt0: null

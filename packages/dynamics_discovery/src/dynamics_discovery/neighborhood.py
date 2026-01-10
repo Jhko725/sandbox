@@ -7,6 +7,10 @@ import jax
 import jax.numpy as jnp
 import scipy.spatial as scspatial
 from dynamical_systems.continuous import AbstractODE
+from dynamical_systems.continuous.ode_base import (
+    _infer_stepsize_controller,
+    AbstractODE,
+)
 from einops import rearrange
 from jax.experimental import jet
 from jaxtyping import Array, ArrayLike, Bool, Float, Int, PRNGKeyArray, PyTree
@@ -183,8 +187,12 @@ class NeuralNeighborhoodFlow(eqx.Module):
         return self.ode.dt0
 
     @property
-    def stepsize_controller(self) -> dfx.AbstractStepSizeController:
-        return self.ode.stepsize_controller
+    def atol(self) -> float | None:
+        return self.ode.atol
+
+    @property
+    def rtol(self) -> float | None:
+        return self.ode.rtol
 
     def rhs(
         self, t, u: tuple[Float[Array, " dim"], Float[Array, " neighbors dim"]], args
@@ -234,6 +242,9 @@ class NeuralNeighborhoodFlow(eqx.Module):
         args=None,
         **kwargs,
     ) -> tuple[Float[Array, " time dim"], Float[Array, " time neighbors dim"]]:
+        stepsize_controller = _infer_stepsize_controller(
+            self.dt0, self.rtol, self.atol, ts
+        )
         sol = dfx.diffeqsolve(
             dfx.ODETerm(self.rhs),
             self.solver,
@@ -243,7 +254,7 @@ class NeuralNeighborhoodFlow(eqx.Module):
             u0,
             args,
             saveat=dfx.SaveAt(ts=ts),
-            stepsize_controller=self.stepsize_controller,
+            stepsize_controller=stepsize_controller,
             **kwargs,
         )
         return sol.ys
@@ -313,7 +324,7 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
         )
 
         mse_neighbors = jnp.sum(
-            jnp.mean((u_nn_pred - u_nn_data) ** 2, axis=(1, 2, 3)) * mask
+            jnp.mean((du_pred - du_nn_data) ** 2, axis=(1, 2, 3)) * mask
         ) / jnp.clip(jnp.sum(mask), min=1)  # Trick do avoid divide by zero
         # mse_neighbors = jnp.mean(
         #     jax.vmap(jax.vmap(maximum_mean_discrepancy))(

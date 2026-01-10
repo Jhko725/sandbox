@@ -30,12 +30,20 @@ class AbstractODE(eqx.Module):
         return f"{cls}({args})"
 
 
-def _infer_stepsize_controller(dt0, rtol, atol):
+def _infer_stepsize_controller(
+    dt0, rtol, atol, ts: Float[Array, " time"] | None = None
+):
     match dt0, rtol, atol:
         case _, float(), float():
             return dfx.PIDController(rtol, atol)
         case float(), None, None:
             return dfx.ConstantStepSize()
+        case None, None, None:
+            if ts is None:
+                raise ValueError(
+                    "To use automatic fixed stepsize, ts must be supplied."
+                )
+            return dfx.StepTo(ts)
         case _:
             raise ValueError("""Unexpected combination of arguments: either 
                              (rtol, atol) = (float, float) or 

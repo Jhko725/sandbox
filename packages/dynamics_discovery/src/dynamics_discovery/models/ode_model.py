@@ -2,6 +2,7 @@ from typing import Any
 
 import diffrax as dfx
 import equinox as eqx
+import jax.numpy as jnp
 from dynamical_systems.continuous.ode_base import (
     _infer_stepsize_controller,
     AbstractODE,
@@ -25,9 +26,11 @@ class ODEModel(AbstractDynamicsModel, AbstractODE):
     """
 
     ode: AbstractODE
+
     solver: dfx.AbstractSolver = eqx.field(static=True)
-    stepsize_controller: dfx.AbstractStepSizeController = eqx.field(static=True)
     dt0: float | None = eqx.field(static=True)
+    rtol: float | None = eqx.field(static=True)
+    atol: float | None = eqx.field(static=True)
 
     def __init__(
         self,
@@ -39,8 +42,9 @@ class ODEModel(AbstractDynamicsModel, AbstractODE):
     ):
         self.ode = ode
         self.solver = solver
-        self.stepsize_controller = _infer_stepsize_controller(dt0, rtol, atol)
         self.dt0 = dt0
+        self.rtol = rtol
+        self.atol = atol
 
     @property
     def dim(self) -> int:
@@ -49,16 +53,25 @@ class ODEModel(AbstractDynamicsModel, AbstractODE):
     def rhs(self, t, u, args):
         return self.ode.rhs(t, u, args)
 
-    def _diffeqsolve(self, t0, t1, u0, saveat: dfx.SaveAt, **diffeqsolve_kwargs):
+    def _diffeqsolve(
+        self,
+        ts: Float[Array, " time"],
+        u0: Float[Array, " dim"],
+        saveat: dfx.SaveAt,
+        **diffeqsolve_kwargs,
+    ):
+        stepsize_controller = _infer_stepsize_controller(
+            self.dt0, self.rtol, self.atol, ts
+        )
         return dfx.diffeqsolve(
             dfx.ODETerm(self.rhs),
             self.solver,
-            t0,
-            t1,
+            ts[0],
+            ts[-1],
             self.dt0,
             u0,
             saveat=saveat,
-            stepsize_controller=self.stepsize_controller,
+            stepsize_controller=stepsize_controller,
             **diffeqsolve_kwargs,
         ).ys
 
@@ -66,15 +79,20 @@ class ODEModel(AbstractDynamicsModel, AbstractODE):
         self,
         t0: FloatScalar,
         t1: FloatScalar,
-        u0: ODEState,
+        u0: Float[Array, " dim"],
         args: Any = None,
         **kwargs: Any,
-    ) -> ODEState:
+    ) -> Float[Array, " dim"]:
         del args
-        return self._diffeqsolve(t0, t1, u0, saveat=dfx.SaveAt(t1=True), **kwargs)[0]
+        ts = jnp.asarray([t0, t1])
+        return self._diffeqsolve(ts, u0, saveat=dfx.SaveAt(t1=True), **kwargs)[0]
 
     def solve(
-        self, ts: Float[Array, " time"], u0: ODEState, args: Any = None, **kwargs
-    ) -> StackedODEState:
+        self,
+        ts: Float[Array, " time"],
+        u0: Float[Array, " dim"],
+        args: Any = None,
+        **kwargs,
+    ) -> Float[Array, "time dim"]:
         del args
-        return self._diffeqsolve(ts[0], ts[-1], u0, saveat=dfx.SaveAt(ts=ts), **kwargs)
+        return self._diffeqsolve(ts, u0, saveat=dfx.SaveAt(ts=ts), **kwargs)
