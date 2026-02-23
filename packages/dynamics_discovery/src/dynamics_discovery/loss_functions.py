@@ -9,6 +9,7 @@ import jax
 import jax.numpy as jnp
 from dynamical_systems.analysis.jacobian import jacobian
 from dynamical_systems.continuous import AbstractODE, TangentODE
+from dynamical_systems.metrics.measure_distances import maximum_mean_discrepancy
 from einops import rearrange
 from jaxtyping import Array, Float, PyTree
 from ott.utils import batched_vmap
@@ -260,3 +261,49 @@ class PushforwardMatchingMSE(AbstractDynamicsLoss):
             "mse": mse_total,
             "DF_loss": DF_loss_total,
         }
+
+
+class DySLIMLoss(AbstractDynamicsLoss):
+    lambda_1: float
+    lambda_2: float
+    batch_size: int | None = None
+
+    def __call__(
+        self,
+        model: AbstractDynamicsModel,
+        batch: PyTree[Float[Array, "batch ..."]],
+        args: Any,
+        **kwargs: Any,
+    ) -> FloatScalar:
+        t_data, u_data = batch
+
+        batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
+
+        @partial(batched_vmap, in_axes=(0, 0), batch_size=batch_size)
+        def _solve(
+            ts: Float[Array, " time"], u0: Float[Array, " dim"]
+        ) -> Float[Array, "time dim"]:
+            return model.solve(ts, u0, args, **kwargs)
+
+        u_pred: Float[Array, "batch time dim"] = _solve(t_data, u_data[:, 0])
+
+        mse_total = jnp.mean((u_pred - u_data) ** 2)
+
+        mmd1 = batched_vmap(
+            maximum_mean_discrepancy,
+            in_axes=(1, None),
+            out_axes=0,
+            batch_size=batch_size,
+        )(u_pred, u_data[:, 0])
+        mmd1_total = jnp.mean(mmd1)
+
+        mmd2 = batched_vmap(
+            maximum_mean_discrepancy,
+            in_axes=(1, 1),
+            out_axes=0,
+            batch_size=batch_size,
+        )(u_pred, u_data)
+        mmd2_total = jnp.mean(mmd2)
+
+        train_loss = mse_total + self.lambda_1 * mmd1_total + self.lambda_2 * mmd2_total
+        return train_loss, {"mse": mse_total, "mmd_1": mmd1_total, "mmd_2": mmd2_total}

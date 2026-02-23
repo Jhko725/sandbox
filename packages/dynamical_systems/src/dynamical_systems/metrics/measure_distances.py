@@ -7,33 +7,36 @@ from ott.tools import sinkhorn_divergence as ott_sinkhorn
 
 @jax.jit
 def maximum_mean_discrepancy(
-    p: Float[Array, "batch dim"],
-    q: Float[Array, "batch dim"],
+    x: Float[Array, "batch dim *rest"],
+    y: Float[Array, "batch dim *rest"],
     bandwidth: tuple[float, ...] = (0.2, 0.5, 0.9, 1.3),
-) -> Array:
-    """Maximum Mean Discrepancy.
+) -> Float[Array, ""]:
+    """Maximum Mean Discrepancy. Adapted from the DySLIM source code:
+    https://github.com/google-research/swirl-dynamics/blob/main/swirl_dynamics/projects/ergodic/measure_distances.py
 
-    Emprical maximum mean discrepancy. The lower the result the more evidence that
+    Empirical maximum mean discrepancy. The lower the result the more evidence
+    that
     distributions are the same.
     Input arrays are reshaped to dimension: `batch_size x -1`, where `-1`
     indicates that all non-batch dimensions are flattened.
     This implementation was adapted from [1].
 
     Args:
-      p: first sample, distribution P
-      q: second sample, distribution Q
-      bandwidth: Multiscale levels for the bandwidth.
+        x: first sample, distribution P
+        y: second sample, distribution Q
+        bandwidth: Multiscale levels for the bandwidth.
 
     Returns:
-      mmd value.
+        mmd value.
     """
     # Samples x and y are of size `batch_size x state_space_dim`, e.g. for Lorenz
     # system `state_space_dim` is `3`, for KS it is `xspan x 1`, for NS it is
     # `h x w x 1`.
     # These arrays are then reshaped to be order two with shape
     # `batch_size x state_space_dim_flattened`.
-
-    xx, yy, zz = jnp.matmul(p, p.T), jnp.matmul(q, q.T), jnp.matmul(p, q.T)
+    x = x.reshape((x.shape[0], -1))
+    y = y.reshape((y.shape[0], -1))
+    xx, yy, zz = jnp.matmul(x, x.T), jnp.matmul(y, y.T), jnp.matmul(x, y.T)
     rx = jnp.broadcast_to(jnp.expand_dims(jnp.diag(xx), axis=0), xx.shape)
     ry = jnp.broadcast_to(jnp.expand_dims(jnp.diag(yy), axis=0), yy.shape)
 
@@ -50,7 +53,7 @@ def maximum_mean_discrepancy(
         xy += a**2 * (a**2 + dxy) ** -1
 
     # TODO: We may want to use jnp.sqrt here; see [2].
-    return jnp.sqrt(jnp.mean(xx + yy - 2.0 * xy))
+    return jnp.mean(xx + yy - 2.0 * xy)
 
 
 @jax.jit

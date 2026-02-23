@@ -11,6 +11,7 @@ from dynamical_systems.continuous.ode_base import (
     _infer_stepsize_controller,
     AbstractODE,
 )
+from dynamical_systems.metrics.measure_distances import maximum_mean_discrepancy
 from einops import rearrange
 from jax.experimental import jet
 from jaxtyping import Array, ArrayLike, Bool, Float, Int, PRNGKeyArray, PyTree
@@ -72,7 +73,9 @@ def sample_neighbor_inds(
     )(ptrs)
 
     inds = jnp.where(
-        jnp.expand_dims(sufficient_neighbors, -1), inds, jnp.zeros_like(inds)
+        jnp.expand_dims(sufficient_neighbors, -1),
+        inds,
+        jnp.expand_dims(sample_inds, -1),
     )
 
     return inds.reshape(in_shape + (n_samples,)), sufficient_neighbors.reshape(in_shape)
@@ -323,14 +326,14 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
             jnp.expand_dims(u_pred, 2) + du_pred
         )
 
-        mse_neighbors = jnp.sum(
-            jnp.mean((du_pred - du_nn_data) ** 2, axis=(1, 2, 3)) * mask
-        ) / jnp.clip(jnp.sum(mask), min=1)  # Trick do avoid divide by zero
-        # mse_neighbors = jnp.mean(
-        #     jax.vmap(jax.vmap(maximum_mean_discrepancy))(
-        #         u_nn_pred[:, 1:], u_nn_data[:, 1:]
-        #     )
-        # )
+        # mse_neighbors = jnp.sum(
+        #     jnp.mean((du_pred - du_nn_data) ** 2, axis=(1, 2, 3)) * mask
+        # ) / jnp.clip(jnp.sum(mask), min=1)  # Trick do avoid divide by zero
+        loss_neighbors: Float[Array, " batch"] = jnp.mean(
+            jax.vmap(jax.vmap(maximum_mean_discrepancy))(u_nn_pred, u_nn_data), axis=1
+        )
+        loss_neighbors = jnp.sum(loss_neighbors * mask) / jnp.clip(jnp.sum(mask), min=1)
+
         if segment_length > self.neighbor_traj_length:
             u_pred_rest = _solve_ode(
                 t_data[:, self.neighbor_traj_length - 1 :], u_pred[:, -1]
@@ -341,12 +344,12 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
         mse_total = jnp.mean((u_pred - u_data) ** 2)
 
         if self.multiterm:
-            loss = [mse_total, self.weight * mse_neighbors]
+            loss = [mse_total, self.weight * loss_neighbors]
         else:
-            loss = mse_total + self.weight * mse_neighbors
+            loss = mse_total + self.weight * loss_neighbors
         return loss, {
             "mse": mse_total,
-            "mse_neighbors": mse_neighbors,
+            "loss_neighbors": loss_neighbors,
         }
 
 
