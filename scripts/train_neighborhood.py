@@ -43,6 +43,7 @@ def main(cfg: DictConfig) -> None:
         trainer.savedir
         / f"neighborhood/weight={cfg.neighborhood.weight}"
         / f"neighbors={cfg.neighborhood.num_neighbors}"
+        / f"order={cfg.neighborhood.order}"
     )
     config_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
 
@@ -53,8 +54,9 @@ def main(cfg: DictConfig) -> None:
         cfg.neighborhood.weight,
         cfg.neighborhood.chunk_size,
         multiterm=multiterm,
-        second_order=cfg.neighborhood.second_order,
+        taylor_order=cfg.neighborhood.order,
         use_taylor_mode=cfg.neighborhood.use_taylor_mode,
+        neighbor_position_loss=cfg.neighborhood.neighbor_position_loss,
     )
     model, _ = trainer.train(model, loader, loss_fn, config=config_dict)
 
