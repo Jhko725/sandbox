@@ -12,7 +12,7 @@ neighborhood:
   r_max: 0.8
   num_neighbors: 30
   weight: 1.0
-  neighbor_position_loss: false
+  neighbor_position_loss: true
   chunk_size: null
   radius: 2.0
   dim_project: 2
@@ -27,3 +27,5 @@ hydra:
     gpus_per_node: 1
 
 enable_x64: true
+
+gpu_id: "auto" # or integer
