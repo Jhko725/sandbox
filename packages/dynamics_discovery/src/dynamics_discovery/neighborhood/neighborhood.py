@@ -24,12 +24,12 @@ from dynamics_discovery.data.loaders import (
     SegmentLoader,
 )
 
-from .custom_types import FloatScalar
-from .data import TimeSeriesDataset
-from .data.loaders import AbstractBatching, SegmentLoader
-from .loss_functions import AbstractDynamicsLoss
-from .models.abstract import AbstractDynamicsModel
-from .models.neuralode import NeuralODE
+from ..custom_types import FloatScalar
+from ..data import TimeSeriesDataset
+from ..data.loaders import AbstractBatching, SegmentLoader
+from ..loss_functions import AbstractDynamicsLoss
+from ..models.abstract import AbstractDynamicsModel
+from ..models.neuralode import NeuralODE
 
 
 class AdjacencyMatrix(eqx.Module):

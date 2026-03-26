@@ -1,3 +1,0 @@
-name: lorenz96
-dim: 6
-loadpath: ./data/lorenz96_6d.hdf5

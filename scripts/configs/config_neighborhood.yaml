@@ -8,17 +8,17 @@ defaults:
 neighborhood:
   order: 2
   use_taylor_mode: false
-  r_min: 0.6
-  r_max: 0.8
-  num_neighbors: 30
-  weight: 1.0
-  neighbor_position_loss: true
-  chunk_size: null
-  radius: 2.0
-  dim_project: 2
-  num_neighbor_threshold: 30
-  pca_score_cutoff: 0.3
+  r_min_multiplier: 3 
+  r_max_init: 1.5
+  r_max_num_sweep: 15
+  target_neighborhood_rel_size: 0.05
+  num_neighbors: 32
+  num_neighbor_threshold: 32
   rollout: 4
+  weight: 1.0
+  chunk_size: null
+  neighbor_position_loss: true
+  
 
 hydra:
   launcher: 

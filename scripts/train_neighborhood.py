@@ -1,10 +1,11 @@
 import hydra
 import jax
 from dynamics_discovery.data.dataset import TimeSeriesDataset
-from dynamics_discovery.neighborhood import (
+from dynamics_discovery.neighborhood.neighborhood import (
     NeighborhoodMSELoss,
     NeighborhoodSegmentLoader,
 )
+from dynamics_discovery.neighborhood.radius_selection import find_r_max, find_r_min
 from dynamics_discovery.training.base import BaseTrainer
 from dynamics_discovery.training.multiterm import MultitermTrainer
 from omegaconf import DictConfig, OmegaConf
@@ -27,17 +28,32 @@ def main(cfg: DictConfig) -> None:
         )
         .downsample(cfg.data.downsample_factor)
         .split_along_time(500)[0]
-        .add_noise(cfg.data.noise_std_relative)
         .standardize()
+    )
+    dataset = dataset.add_noise(cfg.data.noise_std_relative)
+
+    r_min = find_r_min(
+        dataset, max_allowed_rel_noise=0.4, multiplier=cfg.neighborhood.r_min_multiplier
+    )
+    r_max = find_r_max(
+        dataset,
+        r_max_init=cfg.neighborhood.r_max_init,
+        num_sweep=cfg.neighborhood.r_max_num_sweep,
+        r_min=r_min,
+        target_neighborhood_rel_size=cfg.neighborhood.target_neighborhood_rel_size,
     )
     loader = NeighborhoodSegmentLoader(
         dataset,
         cfg.data.segment_length,
-        cfg.neighborhood.r_min,
-        cfg.neighborhood.r_max,
+        r_min,
+        r_max,
         cfg.neighborhood.num_neighbors,
         cfg.neighborhood.num_neighbor_threshold,
-        hydra.utils.instantiate(cfg.data.batch_strategy),
+        hydra.utils.instantiate(
+            cfg.data.batch_strategy,
+            batch_size=cfg.data.batch_strategy.batch_size
+            // cfg.neighborhood.num_neighbors,
+        ),
     )
 
     trainer: BaseTrainer = hydra.utils.instantiate(cfg.training)
