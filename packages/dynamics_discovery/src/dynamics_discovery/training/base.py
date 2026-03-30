@@ -45,26 +45,32 @@ class BaseTrainer(ABC):
     def train(
         self,
         model: AbstractDynamicsModel,
-        loader: SegmentLoader,
         loss_fn: AbstractDynamicsLoss,
+        train_loader: SegmentLoader,
+        validation_loader: SegmentLoader | None = None,
         args: Any = None,
         metric_fns: dict[str, Callable] | None = None,
         *,
         config: dict | None = None,
         **kwargs,
     ):
-        print(loss_fn)
-        print(eqx.filter_value_and_grad(loss_fn, has_aux=True))
-        step_fn = self.make_step_fn(loader, loss_fn, metric_fns)
+        step_fn = self.make_step_fn(
+            loss_fn, train_loader, validation_loader, metric_fns
+        )
 
         opt_state = self.optimizer.init(eqx.filter(model, eqx.is_inexact_array))
-        loader_state = loader.init()
+        if validation_loader is None:
+            loader_state = (train_loader.init(), None)
+            save_metric_name = "loss_train"
+        else:
+            loader_state = (train_loader.init(), validation_loader.init())
+            save_metric_name = "loss_validation"
 
         ckpt_manager = ocp.CheckpointManager(
             (self.savedir / self.savename).resolve(),
             options=ocp.CheckpointManagerOptions(
                 preservation_policy=BestN(
-                    get_metric_fn=lambda metrics: metrics["train_loss"],
+                    get_metric_fn=lambda metrics: metrics[save_metric_name],
                     reverse=True,
                     n=1,
                 )
@@ -82,18 +88,14 @@ class BaseTrainer(ABC):
                     loss, log_dict, model_next, loader_state, opt_state = step_fn(
                         model, args, loader_state, opt_state
                     )
-                    metrics = log_dict | {
-                        "train_loss": loss,
-                        "epoch": step // loader.num_batches,
-                    }
-                    logger.log(metrics, step=step)
+                    logger.log(log_dict, step=step)
 
                     print(f"{step=}, {loss=}")
                     loss_history.append(loss.item())
                     mngr.save(
                         step,
                         args=ocp.args.StandardSave(eqx.filter(model, eqx.is_array)),
-                        metrics=metrics,
+                        metrics=log_dict,
                     )
                     model = model_next
         return model, np.asarray(loss_history)
@@ -101,8 +103,9 @@ class BaseTrainer(ABC):
     @abstractmethod
     def make_step_fn(
         self,
-        loader: SegmentLoader,
         loss_fn: AbstractDynamicsLoss,
+        train_loader: SegmentLoader,
+        validation_loader: SegmentLoader | None,
         metric_fn_dict: dict[str, Callable] | None,
     ) -> Callable: ...
 

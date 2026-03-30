@@ -1,0 +1,13 @@
+ode:
+  _target_: dynamical_systems.continuous.Lorenz63
+
+rtol: 1e-8
+atol: 1e-10
+
+init_mean: 0.0
+init_std: 1.0
+
+burnin_time: 50.0
+
+t_max_lyapunov: 400.0
+dt_lyapunov: 0.2

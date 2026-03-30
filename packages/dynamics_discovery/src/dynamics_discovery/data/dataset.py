@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Self
 
 import equinox as eqx
-import h5py
 import numpy as np
+import xarray as xr
 from dynamical_systems.transforms import Standardize
 from jaxtyping import Float
 
@@ -87,17 +87,15 @@ class TimeSeriesDataset(eqx.Module):
         return replace(self, u=u_transformed)
 
     @classmethod
-    def from_hdf5(cls, filepath: str | Path) -> Self:
-        with h5py.File(filepath, "r") as f:
-            t = f["t"][()]
-            u = f["u"][()]
+    def from_hdf5(cls, filepath: str | Path, time_slice: slice | None = None) -> Self:
+        dataset = xr.load_dataset(filepath, engine="h5netcdf")
+        if time_slice is not None:
+            dataset = dataset.isel(time=time_slice)
+
+        t = dataset.coords["time"].to_numpy()
+        u = dataset["trajectories"].transpose("traj", "time", "dim").to_numpy()
 
         return cls(t, u)
 
-    def to_hdf5(self, savepath: str | Path) -> None:
-        savepath = Path(savepath).with_suffix(".hdf5")
-        savepath.parent.mkdir(parents=True, exist_ok=True)
 
-        with h5py.File(savepath, "w") as f:
-            f.create_dataset("t", data=self.t)
-            f.create_dataset("u", data=self.u)
+# TODO: implement to_hdf5 method

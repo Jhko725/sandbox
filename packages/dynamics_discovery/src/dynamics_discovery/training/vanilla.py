@@ -42,8 +42,9 @@ class VanillaTrainer(BaseTrainer):
 
     def make_step_fn(
         self,
-        loader: SegmentLoader,
         loss_fn: AbstractDynamicsLoss,
+        train_loader: SegmentLoader,
+        validation_loader: SegmentLoader | None,
         metric_fn_dict: dict[str, Callable] | None,
     ) -> Callable:
         loss_grad_fn = eqx.filter_value_and_grad(loss_fn, has_aux=True)
@@ -63,15 +64,38 @@ class VanillaTrainer(BaseTrainer):
                 }
 
         @eqx.filter_jit
-        def _step_fn(model_, args_, loader_state, opt_state):
-            batch, loader_state_next = loader.load_batch(loader_state)
-            (loss, log_dict), grads = loss_grad_fn(model_, batch, args_)
-            updates, opt_state_next = self.optimizer.update(
+        def _step_fn(model_, args_, loader_states, opt_state):
+            train_state, valid_state = loader_states
+            # Train dataset
+            batch_train, train_state = train_loader.load_batch(train_state)
+
+            (loss, log_dict), grads = loss_grad_fn(model_, batch_train, args_)
+            updates, opt_state = self.optimizer.update(
                 grads, opt_state, eqx.filter(model_, eqx.is_inexact_array)
             )
-            metrics_dict = metric_fn(model_, batch, args_)
-            log_dict = log_dict | metrics_dict
+
+            metrics_train = {
+                f"{k}_train": v
+                for k, v in metric_fn(model_, batch_train, args_).items()
+            }
+            log_dict = {f"{k}_train": v for k, v in log_dict.items()}
+            log_dict = log_dict | metrics_train | {"loss_train": loss}
+            # Validation dataset
+            if validation_loader is not None:
+                batch_valid, valid_state = validation_loader.load_batch(valid_state)
+                loss_valid, log_dict_valid = loss_fn(model_, batch_valid, args_)
+                metrics_valid = {
+                    f"{k}_validation": v
+                    for k, v in metric_fn(model_, batch_valid, args_).items()
+                }
+                log_dict_valid = {
+                    f"{k}_validation": v for k, v in log_dict_valid.items()
+                }
+                log_dict_valid = (
+                    log_dict_valid | metrics_valid | {"loss_validation": loss_valid}
+                )
+                log_dict = log_dict | log_dict_valid
             model_ = eqx.apply_updates(model_, updates)
-            return loss, log_dict, model_, loader_state_next, opt_state_next
+            return loss, log_dict, model_, (train_state, valid_state), opt_state
 
         return _step_fn

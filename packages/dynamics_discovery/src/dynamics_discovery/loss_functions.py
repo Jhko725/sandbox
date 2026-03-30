@@ -12,7 +12,6 @@ from dynamical_systems.continuous import AbstractODE, TangentODE
 from dynamical_systems.metrics.measure_distances import maximum_mean_discrepancy
 from einops import rearrange
 from jaxtyping import Array, Float, PyTree
-from ott.utils import batched_vmap
 
 from .custom_types import FloatScalar
 from .models.abstract import AbstractDynamicsModel
@@ -46,9 +45,7 @@ class MSELoss(AbstractDynamicsLoss):
     ) -> FloatScalar:
         t_data, u_data = batch
 
-        batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
-
-        @partial(batched_vmap, in_axes=(0, 0), batch_size=batch_size)
+        @eqx.filter_vmap
         def _mse(t_data_: Float[Array, " time"], u_data_):
             u_pred = model.solve(t_data_, u_data_[0], args, **kwargs)
             return jnp.mean((u_pred - u_data_) ** 2)
@@ -85,14 +82,12 @@ class JacobianMatchingMSE(AbstractDynamicsLoss):
     ) -> FloatScalar:
         t_data, u_data = batch
 
-        batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
-
-        @partial(batched_vmap, in_axes=(0, 0), batch_size=batch_size)
+        @eqx.filter_vmap
         def _mse(t_data_: Float[Array, " time"], u_data_):
             u_pred = model.solve(t_data_, u_data_[0], args, **kwargs)
             return jnp.mean((u_pred - u_data_) ** 2)
 
-        @partial(batched_vmap, in_axes=(0, 0), batch_size=batch_size)
+        @eqx.filter_vmap
         def _jac_loss(t_data_: Float[Array, " time"], u_data_):
             jac_pred = jacobian(model, t_data_[0], u_data_[0])
             jac_true = self.jacobian_fn(t_data_[0], u_data_[0])
@@ -177,10 +172,7 @@ class TangentEvolutionMatchingMSE(AbstractDynamicsLoss):
     ) -> FloatScalar:
         t_data, u_data = batch
 
-        batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
-        print(self)
-
-        @partial(batched_vmap, in_axes=(0, 0), batch_size=batch_size)
+        @eqx.filter_vmap
         def _loss(t_data_: Float[Array, " time"], u_data_):
             u_pred, evol_pred = tangent_evolution_matrix(
                 model,
@@ -230,7 +222,7 @@ class PushforwardMatchingMSE(AbstractDynamicsLoss):
 
         batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
 
-        @partial(batched_vmap, in_axes=(0, 0, 0, 0, 0), batch_size=batch_size)
+        @eqx.filter_vmap
         def _DF_loss(t_data_: Float[Array, " time"], u_data_, M1_, M2_, mask_):
             _, evol_pred = tangent_evolution_matrix(
                 model,
@@ -243,7 +235,7 @@ class PushforwardMatchingMSE(AbstractDynamicsLoss):
             evol_pred = rearrange(evol_pred, "rollout dim1 dim2->rollout dim2 dim1")
             return jnp.mean((M1_.T @ evol_pred - M2_[: self.rollout]) ** 2) * mask_
 
-        @partial(batched_vmap, in_axes=(0, 0), batch_size=batch_size)
+        @eqx.filter_vmap
         def _mse(t_data_: Float[Array, " time"], u_data_):
             u_pred = model.solve(t_data_, u_data_[0], args, **kwargs)
             return jnp.mean((u_pred - u_data_) ** 2)
@@ -279,7 +271,7 @@ class DySLIMLoss(AbstractDynamicsLoss):
 
         batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
 
-        @partial(batched_vmap, in_axes=(0, 0), batch_size=batch_size)
+        @eqx.filter_vmap
         def _solve(
             ts: Float[Array, " time"], u0: Float[Array, " dim"]
         ) -> Float[Array, "time dim"]:
@@ -289,19 +281,17 @@ class DySLIMLoss(AbstractDynamicsLoss):
 
         mse_total = jnp.mean((u_pred - u_data) ** 2)
 
-        mmd1 = batched_vmap(
+        mmd1 = eqx.filter_vmap(
             maximum_mean_discrepancy,
             in_axes=(1, None),
             out_axes=0,
-            batch_size=batch_size,
         )(u_pred, u_data[:, 0])
         mmd1_total = jnp.mean(mmd1)
 
-        mmd2 = batched_vmap(
+        mmd2 = eqx.filter_vmap(
             maximum_mean_discrepancy,
             in_axes=(1, 1),
             out_axes=0,
-            batch_size=batch_size,
         )(u_pred, u_data)
         mmd2_total = jnp.mean(mmd2)
 

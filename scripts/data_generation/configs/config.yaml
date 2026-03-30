@@ -1,0 +1,17 @@
+defaults:
+  - _self_
+  - system: lorenz63
+  - launcher: slurm
+
+t_max_norm: 100
+dt_norm: 0.01
+
+num_trajectories:
+  train: 50
+  validation: 50
+  test: 50
+
+key: 0
+
+savedir: "./data"
+

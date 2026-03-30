@@ -1,0 +1,15 @@
+name: "vanilla"
+
+loss_fn:
+  _target_: dynamics_discovery.loss_functions.MSELoss
+
+loader_partial:
+  _partial_: true
+  _target_: dynamics_discovery.data.loaders.SegmentLoader
+  segment_length: 5
+  batch_strategy:
+    _target_: dynamics_discovery.data.loaders.RandomSampleBatching
+    batch_size: 2048
+    random_seed: 0
+
+subsavedir: ${.name}

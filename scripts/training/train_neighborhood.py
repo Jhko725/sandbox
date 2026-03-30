@@ -2,7 +2,7 @@ import hydra
 import jax
 from dynamics_discovery.data.dataset import TimeSeriesDataset
 from dynamics_discovery.neighborhood.neighborhood import (
-    NeighborhoodMSELoss,
+    NeighborhoodMSELoss2,
     NeighborhoodSegmentLoader,
 )
 from dynamics_discovery.neighborhood.radius_selection import find_r_max, find_r_min
@@ -35,7 +35,7 @@ def main(cfg: DictConfig) -> None:
     r_min = find_r_min(
         dataset, max_allowed_rel_noise=0.4, multiplier=cfg.neighborhood.r_min_multiplier
     )
-    r_max = find_r_max(
+    r_max, _ = find_r_max(
         dataset,
         r_max_init=cfg.neighborhood.r_max_init,
         num_sweep=cfg.neighborhood.r_max_num_sweep,
@@ -52,7 +52,7 @@ def main(cfg: DictConfig) -> None:
         hydra.utils.instantiate(
             cfg.data.batch_strategy,
             batch_size=cfg.data.batch_strategy.batch_size
-            // cfg.neighborhood.num_neighbors,
+            // (cfg.neighborhood.num_neighbors + 1),
         ),
     )
 
@@ -67,7 +67,7 @@ def main(cfg: DictConfig) -> None:
 
     multiterm = True if isinstance(trainer, MultitermTrainer) else False
 
-    loss_fn = NeighborhoodMSELoss(
+    loss_fn = NeighborhoodMSELoss2(
         cfg.neighborhood.rollout + 1,
         cfg.neighborhood.weight,
         cfg.neighborhood.chunk_size,

@@ -1,9 +1,0 @@
-defaults:
-  - base
-
-dataset:
-  name: lorenz63
-  dim: 3
-  loadpath: ./data/lorenz63_large.hdf5
-  ode:
-    _target_: dynamical_systems.continuous.Lorenz63

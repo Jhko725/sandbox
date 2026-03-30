@@ -295,7 +295,7 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
             u0_total = jnp.concatenate((u0.reshape(1, -1), u_neigh0), axis=0)
 
             def _solve(u_):
-                return model.solve(t, u_, args, **kwargs)
+                return model.solve(t, u_, args, max_steps=16384, **kwargs)
 
             u_total = eqx.filter_vmap(_solve, out_axes=1)(u0_total)
             return u_total[:, 0], u_total[:, 1:]
@@ -305,7 +305,9 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
                 model, self.taylor_order, self.use_taylor_mode
             )
             du0 = u_neigh0 - u0
-            u_pred, du_pred = model_nn.solve(t, (u0, du0), args, **kwargs)
+            u_pred, du_pred = model_nn.solve(
+                t, (u0, du0), args, max_steps=16384, **kwargs
+            )
             u_nn_pred = rearrange(u_pred, "T D -> T 1 D") + du_pred
             return u_pred, u_nn_pred
 
@@ -348,6 +350,130 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
 
         # MSE loss for the trajectory
         loss_traj = jnp.mean((u_pred - u_data) ** 2)
+
+        # Compute neighborhood loss using either the neighbor positions or the
+        # displacement from the center point to the neighbors
+        def neighborhood_loss(
+            neigh_pred: Float[Array, "batch time_neigh neighbors dim"],
+            neigh_data: Float[Array, "batch time_neigh neighbors dim"],
+        ) -> Float[Array, ""]:
+            loss_per_sample: Float[Array, " batch"] = jnp.mean(
+                jax.vmap(jax.vmap(maximum_mean_discrepancy))(neigh_pred, neigh_data),
+                axis=1,
+            )
+            return jnp.sum(loss_per_sample * mask) / jnp.clip(jnp.sum(mask), min=1)
+
+        if self.neighbor_position_loss:
+            loss_neigh = neighborhood_loss(u_nn_pred, u_nn_data)
+        else:
+            du_nn_pred = u_nn_pred - rearrange(
+                u_pred[:, : self.neighbor_traj_length], "B T D -> B T 1 D"
+            )
+            du_nn_data = u_nn_data - rearrange(
+                u_data[:, : self.neighbor_traj_length], "B T D -> B T 1 D"
+            )
+            loss_neigh = neighborhood_loss(du_nn_pred, du_nn_data)
+
+        if self.multiterm:
+            loss = [loss_traj, self.weight * loss_neigh]
+        else:
+            loss = loss_traj + self.weight * loss_neigh
+        return loss, {"mse": loss_traj, "loss_neighbors": loss_neigh}
+
+
+class NeighborhoodMSELoss2(AbstractDynamicsLoss):
+    neighbor_traj_length: int = eqx.field(static=True)
+    weight: float = 1.0
+    batch_size: int | None = None
+    multiterm: bool = False
+    taylor_order: int | None = eqx.field(static=True, default=2)
+    use_taylor_mode: bool = False
+    neighbor_position_loss: bool = eqx.field(static=True, default=False)
+
+    def propagate_neighborhood(
+        self,
+        model: NeuralODE,
+        t: Float[Array, " time_neigh"],
+        u0: Float[Array, " dim"],
+        u_neigh0: Float[Array, " neighbors dim"],
+        args,
+        **kwargs,
+    ) -> tuple[
+        Float[Array, "time_neigh dim"], Float[Array, "time_neigh neighbors dim"]
+    ]:
+        if self.taylor_order is None:
+            # Use vmapped model to propagate the neighbor positions;
+            # amounts to just doing batched solve over the neighborhood
+            u0_total = jnp.concatenate((u0.reshape(1, -1), u_neigh0), axis=0)
+
+            def _solve(u_):
+                return model.solve(t, u_, args, max_steps=16384, **kwargs)
+
+            u_total = eqx.filter_vmap(_solve, out_axes=1)(u0_total)
+            return u_total[:, 0], u_total[:, 1:]
+
+        else:
+            model_nn = NeuralNeighborhoodFlow(
+                model, self.taylor_order, self.use_taylor_mode
+            )
+            du0 = u_neigh0 - u0
+            u_pred, du_pred = model_nn.solve(
+                t, (u0, du0), args, max_steps=16384, **kwargs
+            )
+            u_nn_pred = rearrange(u_pred, "T D -> T 1 D") + du_pred
+            return u_pred, u_nn_pred
+
+    def __call__(
+        self,
+        model: NeuralODE,
+        batch: PyTree[Float[Array, "batch ..."]],
+        args: Any = None,
+        **kwargs: Any,
+    ) -> tuple[FloatScalar | list[FloatScalar], dict[str, Array]]:
+        t_data: Float[Array, "batch time"]
+        u_data: Float[Array, "batch time dim"]
+        u_nn_data: Float[Array, "batch time_neighbors neighbors dim"]
+        mask: Bool[Array, "batch"]
+
+        t_data, u_data, u_nn_data, mask = batch
+        u_nn_data = u_nn_data[:, : self.neighbor_traj_length]
+
+        batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
+        segment_length = u_data.shape[1]
+
+        # Solve for neighborhood positions along time
+        # @partial(batched_vmap, batch_size=batch_size)
+        @eqx.filter_vmap
+        def _propagate_neighborhood(t_, u0_, u_neigh0_):
+            return self.propagate_neighborhood(
+                model, t_, u0_, u_neigh0_, args, **kwargs
+            )
+
+        u_pred, u_nn_pred = _propagate_neighborhood(
+            t_data[:, : self.neighbor_traj_length], u_data[:, 0], u_nn_data[:, 0]
+        )
+        u_nn_data_ = rearrange(u_nn_data, "b t n d -> (b n) t d")
+        u_pred_rest = eqx.filter_vmap(
+            partial(model.solve, args=args, **kwargs),
+            in_axes=(None, 0),  # , batch_size=batch_size
+        )(t_data[0, : self.neighbor_traj_length], u_nn_data_[:, 0])
+        # If solving for center trajectories for longer time, additionally solve and
+        # concatenate
+        # if segment_length > self.neighbor_traj_length:
+        #     u_pred_rest = batched_vmap(
+        #         partial(model.solve, args=args, **kwargs), batch_size=batch_size
+        #     )(t_data[:, self.neighbor_traj_length - 1 :], u_pred[:, -1])
+        #     u_pred = jnp.concatenate((u_pred, u_pred_rest[:, 1:]), axis=1)
+
+        # MSE loss for the trajectory
+        loss_traj = jnp.mean(
+            jnp.concatenate(
+                (
+                    jnp.mean((u_pred - u_data) ** 2, axis=(1, 2)),
+                    jnp.mean((u_pred_rest - u_nn_data_) ** 2, axis=(1, 2)),
+                )
+            )
+        )
 
         # Compute neighborhood loss using either the neighbor positions or the
         # displacement from the center point to the neighbors

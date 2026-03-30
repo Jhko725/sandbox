@@ -1,0 +1,12 @@
+defaults:
+  - base
+
+dataset:
+  name: lorenz96
+  dim: 54
+  loadpath: 
+    train: ./data/lorenz96_54d_train.hdf5
+    validation: ./data/lorenz96_54d_validation.hdf5
+    test: ./data/lorenz96_54d_test.hdf5
+  ode:
+    _target_: dynamical_systems.continuous.Lorenz96

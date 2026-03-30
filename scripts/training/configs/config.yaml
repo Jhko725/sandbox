@@ -1,0 +1,7 @@
+defaults:
+  - _self_
+  - model: neuralode
+  - data: lorenz63
+  - training: vanilla
+  - method: vanilla
+  - launcher: slurm

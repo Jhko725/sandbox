@@ -1,0 +1,3 @@
+dataset: ???
+downsample_factor: 2
+noise_std_relative: 0.0

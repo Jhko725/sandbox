@@ -1,0 +1,16 @@
+name: "dyslim"
+loss_fn:
+  _target_: dynamics_discovery.loss_functions.DySLIMLoss
+  lambda_1: 1
+  lambda_2: 100
+
+loader_partial:
+  _partial_: true
+  _target_: dynamics_discovery.data.loaders.SegmentLoader
+  segment_length: 5
+  batch_strategy:
+    _target_: dynamics_discovery.data.loaders.RandomSampleBatching
+    batch_size: 2048
+    random_seed: 0
+
+subsavedir: ${.name}/lambda_1=${.loss_fn.lambda_1}_lambda_2=${.loss_fn.lambda_2}

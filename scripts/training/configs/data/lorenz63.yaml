@@ -1,0 +1,12 @@
+defaults:
+  - base
+
+dataset:
+  name: lorenz63
+  dim: 3
+  loadpath:
+    train: ./data/lorenz63_train.hdf5
+    validation: ./data/lorenz63_validation.hdf5
+    test: ./data/lorenz63_test.hdf5
+  ode:
+    _target_: dynamical_systems.continuous.Lorenz63
