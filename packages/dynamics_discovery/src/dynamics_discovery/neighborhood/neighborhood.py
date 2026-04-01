@@ -1,3 +1,5 @@
+import logging
+from copy import replace
 from functools import partial
 from typing import Any
 
@@ -6,16 +8,13 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import scipy.spatial as scspatial
-from dynamical_systems.continuous import AbstractODE
 from dynamical_systems.continuous.ode_base import (
     _infer_stepsize_controller,
-    AbstractODE,
 )
 from dynamical_systems.metrics.measure_distances import maximum_mean_discrepancy
 from einops import rearrange
 from jax.experimental import jet
-from jaxtyping import Array, ArrayLike, Bool, Float, Int, PRNGKeyArray, PyTree
-from ott.utils import batched_vmap
+from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray, PyTree
 
 from dynamics_discovery.custom_types import FloatScalar, IntScalarLike
 from dynamics_discovery.data import TimeSeriesDataset
@@ -28,13 +27,16 @@ from ..custom_types import FloatScalar
 from ..data import TimeSeriesDataset
 from ..data.loaders import AbstractBatching, SegmentLoader
 from ..loss_functions import AbstractDynamicsLoss
-from ..models.abstract import AbstractDynamicsModel
 from ..models.neuralode import NeuralODE
+from .radius_selection import find_r_max, find_r_min
+
+
+logger = logging.getLogger(__name__)
 
 
 class AdjacencyMatrix(eqx.Module):
-    indptr: Float[ArrayLike, " points+1"]
-    indices: Float[ArrayLike, " total_neighbors"]
+    indptr: Float[Array, " points+1"]
+    indices: Float[Array, " total_neighbors"]
     """Adjacency matrix stored in CSR sparse array format."""
 
 
@@ -93,17 +95,31 @@ class NeighborhoodSegmentLoader(SegmentLoader):
         self,
         dataset: TimeSeriesDataset,
         segment_length: int,
-        r_min: float,
-        r_max: float,
         num_neighbors: int,
-        neighbor_cutoff: int,
+        r_min_kwargs: dict[str, Any],
+        r_max_kwargs: dict[str, Any],
         batch_strategy: AbstractBatching,
+        neighbor_cutoff: int | None = None,
+        efficient_neighborhood: bool = False,
     ):
+        if efficient_neighborhood:
+            batch_size_new = batch_strategy.batch_size // num_neighbors
+            batch_strategy = replace(batch_strategy, batch_size=batch_size_new)
+            num_neighbors = num_neighbors - 1
+
         super().__init__(dataset, segment_length, batch_strategy)
-        self.r_min = r_min
-        self.r_max = r_max
+        logger.info("Calculating minimum radius for neighbor selection")
+        self.r_min = find_r_min(dataset, **r_min_kwargs)
+        logger.info(f"Minimum radius calculated: r_min={self.r_min}")
+
+        logger.info("Calculating maximum radius for neighbor selection")
+        self.r_max = find_r_max(dataset, r_min=self.r_min, **r_max_kwargs)[0]
+        logger.info(f"Maximum radius calculated: r_max={self.r_max}")
+
         self.num_neighbors = num_neighbors
-        self.neighbor_cutoff = neighbor_cutoff
+        self.neighbor_cutoff = (
+            num_neighbors if neighbor_cutoff is None else neighbor_cutoff
+        )
 
         self._adjacency_matrix = self._build_adjacency_matrix()
 
@@ -271,12 +287,10 @@ class NeuralNeighborhoodFlow(eqx.Module):
 
 class NeighborhoodMSELoss(AbstractDynamicsLoss):
     neighbor_traj_length: int = eqx.field(static=True)
-    weight: float = 1.0
-    batch_size: int | None = None
-    multiterm: bool = False
+    weight: float = eqx.field(static=True, default=1.0)
     taylor_order: int | None = eqx.field(static=True, default=2)
-    use_taylor_mode: bool = False
-    neighbor_position_loss: bool = eqx.field(static=True, default=False)
+    use_taylor_mode: bool = eqx.field(static=True, default=False)
+    multiterm: bool = eqx.field(static=True, default=False)
 
     def propagate_neighborhood(
         self,
@@ -326,11 +340,10 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
         t_data, u_data, u_nn_data, mask = batch
         u_nn_data = u_nn_data[:, : self.neighbor_traj_length]
 
-        batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
         segment_length = u_data.shape[1]
 
         # Solve for neighborhood positions along time
-        @partial(batched_vmap, batch_size=batch_size)
+        @eqx.filter_vmap
         def _propagate_neighborhood(t_, u0_, u_neigh0_):
             return self.propagate_neighborhood(
                 model, t_, u0_, u_neigh0_, args, **kwargs
@@ -343,9 +356,9 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
         # If solving for center trajectories for longer time, additionally solve and
         # concatenate
         if segment_length > self.neighbor_traj_length:
-            u_pred_rest = batched_vmap(
-                partial(model.solve, args=args, **kwargs), batch_size=batch_size
-            )(t_data[:, self.neighbor_traj_length - 1 :], u_pred[:, -1])
+            u_pred_rest = eqx.filter_vmap(partial(model.solve, args=args, **kwargs))(
+                t_data[:, self.neighbor_traj_length - 1 :], u_pred[:, -1]
+            )
             u_pred = jnp.concatenate((u_pred, u_pred_rest[:, 1:]), axis=1)
 
         # MSE loss for the trajectory
@@ -363,16 +376,7 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
             )
             return jnp.sum(loss_per_sample * mask) / jnp.clip(jnp.sum(mask), min=1)
 
-        if self.neighbor_position_loss:
-            loss_neigh = neighborhood_loss(u_nn_pred, u_nn_data)
-        else:
-            du_nn_pred = u_nn_pred - rearrange(
-                u_pred[:, : self.neighbor_traj_length], "B T D -> B T 1 D"
-            )
-            du_nn_data = u_nn_data - rearrange(
-                u_data[:, : self.neighbor_traj_length], "B T D -> B T 1 D"
-            )
-            loss_neigh = neighborhood_loss(du_nn_pred, du_nn_data)
+        loss_neigh = neighborhood_loss(u_nn_pred, u_nn_data)
 
         if self.multiterm:
             loss = [loss_traj, self.weight * loss_neigh]
@@ -381,47 +385,28 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
         return loss, {"mse": loss_traj, "loss_neighbors": loss_neigh}
 
 
-class NeighborhoodMSELoss2(AbstractDynamicsLoss):
+class EfficientNeighborhoodMSELoss(NeighborhoodMSELoss):
     neighbor_traj_length: int = eqx.field(static=True)
-    weight: float = 1.0
-    batch_size: int | None = None
-    multiterm: bool = False
-    taylor_order: int | None = eqx.field(static=True, default=2)
-    use_taylor_mode: bool = False
-    neighbor_position_loss: bool = eqx.field(static=True, default=False)
+    weight: float = eqx.field(static=True)
+    taylor_order: int | None = eqx.field(static=True)
+    use_taylor_mode: bool = eqx.field(static=True)
+    multiterm: bool = eqx.field(static=True)
 
-    def propagate_neighborhood(
+    def __init__(
         self,
-        model: NeuralODE,
-        t: Float[Array, " time_neigh"],
-        u0: Float[Array, " dim"],
-        u_neigh0: Float[Array, " neighbors dim"],
-        args,
-        **kwargs,
-    ) -> tuple[
-        Float[Array, "time_neigh dim"], Float[Array, "time_neigh neighbors dim"]
-    ]:
-        if self.taylor_order is None:
-            # Use vmapped model to propagate the neighbor positions;
-            # amounts to just doing batched solve over the neighborhood
-            u0_total = jnp.concatenate((u0.reshape(1, -1), u_neigh0), axis=0)
-
-            def _solve(u_):
-                return model.solve(t, u_, args, max_steps=16384, **kwargs)
-
-            u_total = eqx.filter_vmap(_solve, out_axes=1)(u0_total)
-            return u_total[:, 0], u_total[:, 1:]
-
-        else:
-            model_nn = NeuralNeighborhoodFlow(
-                model, self.taylor_order, self.use_taylor_mode
-            )
-            du0 = u_neigh0 - u0
-            u_pred, du_pred = model_nn.solve(
-                t, (u0, du0), args, max_steps=16384, **kwargs
-            )
-            u_nn_pred = rearrange(u_pred, "T D -> T 1 D") + du_pred
-            return u_pred, u_nn_pred
+        neighbor_traj_length: int,
+        weight: float = 1.0,
+        taylor_order: int | None = 2,
+        use_taylor_mode: bool = False,
+        multiterm: bool = False,
+    ):
+        super().__init__(
+            neighbor_traj_length=neighbor_traj_length,
+            weight=weight,
+            taylor_order=taylor_order,
+            use_taylor_mode=use_taylor_mode,
+            multiterm=multiterm,
+        )
 
     def __call__(
         self,
@@ -438,11 +423,10 @@ class NeighborhoodMSELoss2(AbstractDynamicsLoss):
         t_data, u_data, u_nn_data, mask = batch
         u_nn_data = u_nn_data[:, : self.neighbor_traj_length]
 
-        batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
         segment_length = u_data.shape[1]
 
         # Solve for neighborhood positions along time
-        # @partial(batched_vmap, batch_size=batch_size)
+
         @eqx.filter_vmap
         def _propagate_neighborhood(t_, u0_, u_neigh0_):
             return self.propagate_neighborhood(
@@ -455,7 +439,7 @@ class NeighborhoodMSELoss2(AbstractDynamicsLoss):
         u_nn_data_ = rearrange(u_nn_data, "b t n d -> (b n) t d")
         u_pred_rest = eqx.filter_vmap(
             partial(model.solve, args=args, **kwargs),
-            in_axes=(None, 0),  # , batch_size=batch_size
+            in_axes=(None, 0),
         )(t_data[0, : self.neighbor_traj_length], u_nn_data_[:, 0])
         # If solving for center trajectories for longer time, additionally solve and
         # concatenate
@@ -487,186 +471,10 @@ class NeighborhoodMSELoss2(AbstractDynamicsLoss):
             )
             return jnp.sum(loss_per_sample * mask) / jnp.clip(jnp.sum(mask), min=1)
 
-        if self.neighbor_position_loss:
-            loss_neigh = neighborhood_loss(u_nn_pred, u_nn_data)
-        else:
-            du_nn_pred = u_nn_pred - rearrange(
-                u_pred[:, : self.neighbor_traj_length], "B T D -> B T 1 D"
-            )
-            du_nn_data = u_nn_data - rearrange(
-                u_data[:, : self.neighbor_traj_length], "B T D -> B T 1 D"
-            )
-            loss_neigh = neighborhood_loss(du_nn_pred, du_nn_data)
+        loss_neigh = neighborhood_loss(u_nn_pred, u_nn_data)
 
         if self.multiterm:
             loss = [loss_traj, self.weight * loss_neigh]
         else:
             loss = loss_traj + self.weight * loss_neigh
         return loss, {"mse": loss_traj, "loss_neighbors": loss_neigh}
-
-
-class NormalODE(AbstractODE):
-    ode: AbstractODE
-
-    @property
-    def dim(self) -> int:
-        return self.ode.dim * (self.ode.dim + 1)
-
-    @property
-    def solver(self) -> dfx.AbstractSolver:
-        return self.ode.solver
-
-    @property
-    def dt0(self) -> float | None:
-        return self.ode.dt0
-
-    @property
-    def stepsize_controller(self) -> dfx.AbstractStepSizeController:
-        return self.ode.stepsize_controller
-
-    def rhs(self, t, u: tuple[Float[Array, " dim"], Float[Array, " dim"]], args):
-        x, Nx = u
-
-        def rhs_ode(x_):
-            return self.ode.rhs(t, x_, args)
-
-        dx, vjp_fun = jax.vjp(rhs_ode, x)
-        dNx = -vjp_fun(Nx)[0]
-
-        return dx, dNx
-
-    def solve(
-        self,
-        ts: Float[Array, " time"],
-        u0: tuple[Float[Array, " dim"], Float[Array, "dim"]],
-        args=None,
-        **kwargs,
-    ) -> tuple[Float[Array, " time dim"], Float[Array, " time dim"]]:
-        sol = dfx.diffeqsolve(
-            dfx.ODETerm(self.rhs),
-            self.solver,
-            ts[0],
-            ts[-1],
-            self.dt0,
-            u0,
-            args,
-            saveat=dfx.SaveAt(ts=ts),
-            stepsize_controller=self.stepsize_controller,
-            **kwargs,
-        )
-        return sol.ys
-
-
-def get_normal_direction(points: Float[Array, "batch dim"]):
-    points_centered = points  # - jnp.mean(points, axis=0)
-    _, _, Q_T = jnp.linalg.svd(points_centered, full_matrices=False)
-    return Q_T[2]
-
-
-get_normal_direction_batch = jax.vmap(jax.vmap(get_normal_direction))
-
-
-class NormalVectorSegmentLoader(NeighborhoodSegmentLoader):
-    def __init__(
-        self,
-        dataset: TimeSeriesDataset,
-        segment_length: int,
-        num_neighbors: int,
-        batch_strategy: AbstractBatching,
-    ):
-        super().__init__(dataset, segment_length, num_neighbors, batch_strategy)
-
-    def load_batch(
-        self, loader_state: PRNGKeyArray
-    ) -> tuple[
-        Float[Array, "{self.batch_size} {self.segment_length}"],
-        Float[Array, "{self.batch_size} {self.segment_length} dim"],
-        Float[
-            Array, "{self.batch_size} {self.segment_length} {self.num_neighbors} dim"
-        ],
-    ]:
-        (t_batch, u_batch, u_nn_batch), loader_state_next = super().load_batch(
-            loader_state
-        )
-        normal_batch = get_normal_direction_batch(u_nn_batch)
-        return (t_batch, u_batch, normal_batch), loader_state_next
-
-
-def directional_cosine_squared(x1, x2):
-    denom = jnp.sum(x1 * x1) * jnp.sum(x2 * x2)
-    return jnp.dot(x1, x2) ** 2 / denom
-
-
-class NormalLoss(AbstractDynamicsLoss):
-    weight: float = 1.0
-    batch_size: int | None = None
-    multiterm: bool = False
-    orthogonal_loss: bool = False
-
-    def __call__(
-        self,
-        model: AbstractDynamicsModel,
-        batch: PyTree[Float[Array, "batch ..."]],
-        args: Any = None,
-        **kwargs: Any,
-    ) -> FloatScalar:
-        t_data, u_data, Nu_data = batch
-        batch_size = u_data.shape[0] if self.batch_size is None else self.batch_size
-
-        normal_ode = NormalODE(model)
-
-        @partial(batched_vmap, in_axes=(0, 0, 0), batch_size=batch_size)
-        def _loss(t_data_: Float[Array, " time"], u_data_, Nu_data_):
-            u_pred, Nu_pred = normal_ode.solve(
-                t_data_, (u_data_[0], Nu_data_[0]), args, **kwargs
-            )
-            mse_u = jnp.mean((u_pred - u_data_) ** 2)
-            sin_sqr = 1 - jax.vmap(directional_cosine_squared)(Nu_data_, Nu_pred)
-
-            if self.orthogonal_loss:
-                ortho = jax.vmap(directional_cosine_squared)(
-                    jax.vmap(lambda t_, u_: model.ode.rhs(t_, u_, None))(
-                        t_data_, u_data_
-                    ),
-                    Nu_data_,
-                )
-                ortho_loss = jnp.mean(ortho)
-            else:
-                ortho_loss = None
-            return mse_u, jnp.mean(sin_sqr), ortho_loss
-
-        mse_, sin_sqr_, ortho_ = _loss(t_data, u_data, Nu_data)
-        mse_total = jnp.mean(mse_)
-        sin_sqr_total = jnp.mean(sin_sqr_)
-
-        if self.orthogonal_loss:
-            ortho_total = jnp.mean(ortho_)
-            if self.multiterm:
-                loss = [
-                    mse_total,
-                    self.weight * sin_sqr_total,
-                    self.weight * ortho_total,
-                ]
-            else:
-                loss = (
-                    mse_total + self.weight * sin_sqr_total + self.weight * ortho_total
-                )
-
-            aux_dict = {
-                "mse": mse_total,
-                "normal_loss": sin_sqr_total,
-                "ortho_loss": ortho_total,
-            }
-
-        else:
-            if self.multiterm:
-                loss = [mse_total, self.weight * sin_sqr_total]
-            else:
-                loss = mse_total + self.weight * sin_sqr_total
-
-            aux_dict = {
-                "mse": mse_total,
-                "normal_loss": sin_sqr_total,
-            }
-
-        return loss, aux_dict

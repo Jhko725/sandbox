@@ -29,7 +29,7 @@ def estimate_noise_stdev(
     if np.any(noise_std > max_allowed_rel_noise * np.std(x, axis=0)):
         return np.asarray(np.nan)
     else:
-        return np.linalg.norm(noise_std)  # ty:ignore[invalid-return-type]
+        return np.mean(noise_std)  # ty:ignore[invalid-return-type]
 
 
 def find_r_min(dataset, max_allowed_rel_noise=0.4, multiplier=3):

@@ -2,7 +2,7 @@ defaults:
   - base
 
 dataset:
-  name: lorenz96
+  name: lorenz96_6d
   dim: 6
   loadpath: 
     train: ./data/lorenz96_6d_train.hdf5

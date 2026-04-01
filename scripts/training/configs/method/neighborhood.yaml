@@ -1,0 +1,26 @@
+name: "neighborhood"
+
+loss_fn:
+  _target_: dynamics_discovery.neighborhood.neighborhood.NeighborhoodMSELoss
+  neighbor_traj_length: ${..loader_partial.segment_length}
+  weight: 100
+  taylor_order: 2
+  use_taylor_mode: False
+
+loader_partial:
+  _partial_: true
+  _target_: dynamics_discovery.neighborhood.neighborhood.NeighborhoodSegmentLoader
+  segment_length: 5
+  num_neighbors: 32
+  r_min_kwargs:
+    multiplier: 8
+  r_max_kwargs:
+    r_max_init: 1.5
+    target_neighborhood_rel_size: 0.05
+    num_sweep: 15
+  batch_strategy:
+    _target_: dynamics_discovery.data.loaders.RandomSampleBatching
+    batch_size: 2048
+    random_seed: 0
+
+subsavedir: ${.name}/num_neighbors=${.loader_partial.num_neighbors}_weight=${.loss_fn.weight}
