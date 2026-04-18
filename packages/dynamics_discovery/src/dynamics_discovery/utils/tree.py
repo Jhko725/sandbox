@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Sequence
 
 import equinox as eqx
 import jax
@@ -61,3 +62,14 @@ def tree_normalize(x: PyTree[ArrayLike, " T"]) -> PyTree[ArrayLike, " T"]:
     returns a zero vector if the norm of x is zero."""
     x_norm = two_norm(x)
     return jax.lax.cond(x_norm > 0, partial(tree_scale, 1 / x_norm), tree_zeros_like, x)
+
+
+def tree_stack(trees: Sequence[PyTree], axis: int = 0):
+    trees_array, trees_static = zip(
+        *[eqx.partition(t, eqx.is_inexact_array) for t in trees]
+    )
+    assert eqx.tree_equal(*trees_static), (
+        "Input PyTrees must share the same structure and non-array leaves."
+    )
+    tree_stacked = jax.tree.map(lambda *xs: jnp.stack(xs, axis=axis), *trees_array)
+    return eqx.combine(tree_stacked, trees_static[0])

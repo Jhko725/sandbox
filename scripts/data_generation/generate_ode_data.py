@@ -79,11 +79,15 @@ def main(cfg: DictConfig) -> None:
         key_lya, key_data = jax.random.split(subkey)
 
         # Estimate Lyapunov spectrum
+        print("Estimating Lyapunov spectrum...")
         lyapunovs = estimate_lyapunov_spectrum(key_lya, num_trajs)
+        print("Spectrum estimated!")
 
         lya_max = jnp.max(lyapunovs)
         ts = jnp.arange(0, cfg.t_max_norm / lya_max, cfg.dt_norm / lya_max)
+        print("Generating trajectories...")
         us = generate_trajectories(key_data, num_trajs, ts)
+        print("Trajectories generated!")
 
         dataset: xr.Dataset = to_xarray(ts, us, lyapunovs)
 

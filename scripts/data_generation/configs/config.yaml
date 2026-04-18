@@ -13,5 +13,5 @@ num_trajectories:
 
 key: 0
 
-savedir: "./data"
+savedir: "./data/larger"
 

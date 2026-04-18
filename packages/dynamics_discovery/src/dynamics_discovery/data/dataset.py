@@ -20,15 +20,18 @@ class TimeSeriesDataset(eqx.Module):
 
     t: Float[np.ndarray, "samples time"]
     u: Float[np.ndarray, "samples time dim"]
+    metadata: dict | None = None
 
     def __init__(
         self,
         t: Float[np.ndarray, "#samples time"],
         u: Float[np.ndarray, "samples time dim"],
+        metadata: dict | None = None,
     ):
         t = np.atleast_2d(np.asarray(t))
         self.t = np.tile(t, (u.shape[0], 1)) if t.shape[0] == 1 else t
         self.u = np.asarray(u)
+        self.metadata = metadata
 
     def __check_init__(self):
         if self.t.shape != self.u.shape[:2]:
@@ -94,8 +97,8 @@ class TimeSeriesDataset(eqx.Module):
 
         t = dataset.coords["time"].to_numpy()
         u = dataset["trajectories"].transpose("traj", "time", "dim").to_numpy()
-
-        return cls(t, u)
+        metadata = {"lyapunovs": dataset["lyapunovs"].to_numpy()}
+        return cls(t, u, metadata=metadata)
 
 
 # TODO: implement to_hdf5 method

@@ -2,7 +2,6 @@ import jax
 import jax.numpy as jnp
 import ott
 from jaxtyping import Array, Float
-from ott.tools import sinkhorn_divergence as ott_sinkhorn
 
 
 @jax.jit
@@ -71,7 +70,12 @@ def sinkhorn_divergence(p: Float[Array, "batch dim"], q: Float[Array, "batch dim
     [2] Y. Schiff et al. "DySLIM: Dynamics Stable Learning by Invariant Measure for
     Chaotic Systems. International Conference on Machine Learning. PMLR, 2024."
     """
-    return ott_sinkhorn.sinkdiv(p, q, static_b=False)[0]
+    return ott.tools.sinkhorn_divergence.sinkhorn_divergence(
+        ott.geometry.pointcloud.PointCloud,  # geom,
+        p,  # geom.x,
+        q,  # geom.y,
+        static_b=False,
+    )[0]
 
 
 @jax.jit
