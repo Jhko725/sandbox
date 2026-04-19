@@ -5,8 +5,8 @@ dataset:
   name: lorenz96_18d
   dim: 18
   loadpath: 
-    train: ./data/lorenz96_18d_train.hdf5
-    validation: ./data/lorenz96_18d_validation.hdf5
-    test: ./data/lorenz96_18d_test.hdf5
+    train: ./data/rescaled/lorenz96_18d_train.hdf5
+    validation: ./data/rescaled/lorenz96_18d_validation.hdf5
+    test: ./data/rescaled/lorenz96_18d_test.hdf5
   ode:
     _target_: dynamical_systems.continuous.Lorenz96

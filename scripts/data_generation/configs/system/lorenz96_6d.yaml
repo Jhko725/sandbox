@@ -6,9 +6,15 @@ rtol: 1e-8
 atol: 1e-10
 
 init_mean: 0.0
-init_std: 1.0
+init_std: 0.2
 
 burnin_time: 1000.0
 
-t_max_lyapunov: 1500.0
-dt_lyapunov: 1.0
+period_estimation:
+  t_max: 100
+  dt: 0.01
+  smoothing: 5
+
+lyapunov_estimation:
+  t_max: 1500.0
+  dt: 1.0

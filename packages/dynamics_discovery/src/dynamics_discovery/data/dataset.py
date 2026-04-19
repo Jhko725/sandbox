@@ -97,7 +97,10 @@ class TimeSeriesDataset(eqx.Module):
 
         t = dataset.coords["time"].to_numpy()
         u = dataset["trajectories"].transpose("traj", "time", "dim").to_numpy()
-        metadata = {"lyapunovs": dataset["lyapunovs"].to_numpy()}
+        metadata = {
+            "lyapunovs": dataset["lyapunovs"].to_numpy(),
+            "period": dataset.attrs["period"],
+        }
         return cls(t, u, metadata=metadata)
 
 

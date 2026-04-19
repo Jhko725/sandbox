@@ -6,7 +6,7 @@ import hydra
 import jax
 import jax.numpy as jnp
 import xarray as xr
-from dynamical_systems.analysis import lyapunov_gr
+from dynamical_systems.analysis import lyapunov_gr, period_from_average_power_spectrum
 from dynamical_systems.continuous import solve_ode
 from hydra.core.hydra_config import HydraConfig
 from jaxtyping import Array, Float
@@ -14,6 +14,25 @@ from omegaconf import DictConfig
 
 
 jax.config.update("jax_enable_x64", True)
+
+
+def to_xarray(
+    ts: Float[Array, " time"],
+    us: Float[Array, "traj time dim"],
+    lyapunovs: Float[Array, " dim"],
+    period: Float[Array, ""],
+) -> xr.Dataset:
+    trajectories = xr.DataArray(
+        data=us, dims=["traj", "time", "dim"], coords={"time": ts}
+    )
+    dataset = xr.Dataset(
+        data_vars={
+            "trajectories": trajectories,
+            "lyapunovs": (["dim"], lyapunovs),
+        },
+        attrs={"period": float(period)},
+    )
+    return dataset
 
 
 @hydra.main(config_path="./configs", config_name="config", version_base=None)
@@ -42,54 +61,50 @@ def main(cfg: DictConfig) -> None:
         u0_ = u0_ * cfg.system.init_std + cfg.system.init_mean
         return solve_ode_batch(jnp.asarray([0, cfg.system.burnin_time]), u0_)[:, -1]
 
-    def estimate_lyapunov_spectrum(_key, num_trajs: int) -> Float[Array, "{ode.dim}"]:
-        u0 = get_on_attractor_points(_key, num_trajs)
-        ts = jnp.arange(0, cfg.system.t_max_lyapunov, cfg.system.dt_lyapunov)
-
-        lyas: Float[Array, "trajs ts dim"] = eqx.filter_vmap(
+    def estimate_lyapunov_spectrum(
+        _ts: Float[Array, " T_lya"], _u0: Float[Array, "B D"]
+    ) -> Float[Array, " D"]:
+        lyas: Float[Array, "B T_lya D"] = eqx.filter_vmap(
             lambda _u0: lyapunov_gr(
-                ode, _u0, ts, rtol=cfg.system.rtol, atol=cfg.system.atol
+                ode, _u0, _ts, rtol=cfg.system.rtol, atol=cfg.system.atol
             )[0]
         )(u0)
         return jnp.mean(lyas[:, -1], axis=0)
 
-    def generate_trajectories(
-        _key, num_trajs: int, ts: Float[Array, " time"]
-    ) -> Float[Array, "{num_trajs} time {ode.dim}"]:
-        u0 = get_on_attractor_points(_key, num_trajs)
-        return solve_ode_batch(ts, u0)
-
-    def to_xarray(
-        ts: Float[Array, " time"],
-        us: Float[Array, "traj time dim"],
-        lyapunovs: Float[Array, " dim"],
-    ) -> xr.Dataset:
-        trajectories = xr.DataArray(
-            data=us, dims=["traj", "time", "dim"], coords={"time": ts}
-        )
-        dataset = xr.Dataset(
-            data_vars={"trajectories": trajectories, "lyapunovs": (["dim"], lyapunovs)}
-        )
-        return dataset
-
     key = jax.random.key(cfg.key)
 
     for i, (dataset_type, num_trajs) in enumerate(cfg.num_trajectories.items()):
-        subkey = jax.random.fold_in(key, i)
-        key_lya, key_data = jax.random.split(subkey)
+        key_data = jax.random.fold_in(key, i)
 
-        # Estimate Lyapunov spectrum
-        print("Estimating Lyapunov spectrum...")
-        lyapunovs = estimate_lyapunov_spectrum(key_lya, num_trajs)
-        print("Spectrum estimated!")
+        # Generate initial conditions on the attractor
+        u0 = get_on_attractor_points(key_data, num_trajs)
 
-        lya_max = jnp.max(lyapunovs)
-        ts = jnp.arange(0, cfg.t_max_norm / lya_max, cfg.dt_norm / lya_max)
+        # Estimate period by generating & analyzing an initial batch of trajectories
+        print("Estimating period...")
+        ts = jnp.arange(
+            0, cfg.system.period_estimation.t_max, cfg.system.period_estimation.dt
+        )
+        us = solve_ode_batch(ts, u0)
+        period = period_from_average_power_spectrum(
+            ts, us, smoothing=cfg.system.period_estimation.smoothing
+        )
+        print(f"Period estimated: {period=}")
+
+        # Perform actual trajectory generation
         print("Generating trajectories...")
-        us = generate_trajectories(key_data, num_trajs, ts)
+        t_data = jnp.arange(0, cfg.num_periods * period, period / cfg.pts_per_period)
+        u_data = solve_ode_batch(t_data, u0)
         print("Trajectories generated!")
 
-        dataset: xr.Dataset = to_xarray(ts, us, lyapunovs)
+        # Additionally, estimate the Lyapunov exponents
+        print("Estimating Lyapunov spectrum...")
+        t_lya = jnp.arange(
+            0, cfg.system.lyapunov_estimation.t_max, cfg.system.lyapunov_estimation.dt
+        )
+        lyapunovs = estimate_lyapunov_spectrum(t_lya, u0)
+        print("Spectrum estimated!")
+
+        dataset: xr.Dataset = to_xarray(t_data, u_data, lyapunovs, period)
 
         savedir = Path(cfg.savedir)
         filename = f"{system_name}_{dataset_type}.hdf5"

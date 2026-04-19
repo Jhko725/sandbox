@@ -9,5 +9,11 @@ init_std: 1.0
 
 burnin_time: 50.0
 
-t_max_lyapunov: 400.0
-dt_lyapunov: 0.2
+period_estimation:
+  t_max: 50
+  dt: 0.02
+  smoothing: 10
+
+lyapunov_estimation:
+  t_max: 400.0
+  dt: 0.2
