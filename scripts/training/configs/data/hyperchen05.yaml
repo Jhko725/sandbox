@@ -4,6 +4,9 @@ defaults:
 dataset:
   name: hyperchen05
   dim: 4
-  loadpath: ./data/hyperchen05_train.hdf5
+  loadpath:
+    train: ./data/take3/hyperchen05_train.hdf5
+    validation: ./data/take3/hyperchen05_validation.hdf5
+    test: ./data/take3/hyperchen05_test.hdf5
   ode:
     _target_: dynamical_systems.continuous.HyperChen05

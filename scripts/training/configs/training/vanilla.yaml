@@ -3,8 +3,8 @@ optimizer:
   _target_: optax.adabelief
   learning_rate: 2e-3
 max_epochs: 5000
-savedir: ./results/rescaled/${..data.dataset.name}
+savedir: ./results/take3/${..data.dataset.name}
 savename: lr=${.optimizer.learning_rate}_noise=${..data.noise_std_relative}_key=${..model.key}
 wandb_entity: jhko725
-wandb_project: ${..data.dataset.name}_rescaled
+wandb_project: ${..data.dataset.name}_take3
 wandb_mode: online

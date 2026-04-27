@@ -58,7 +58,7 @@ def main(cfg: DictConfig) -> None:
     ) -> Float[Array, "{num_points} {ode.dim}"]:
         # Sample off-attractor initial points from an isotropic gaussian
         u0_ = jax.random.normal(_key, shape=(num_points, ode.dim))
-        u0_ = u0_ * cfg.system.init_std + cfg.system.init_mean
+        u0_ = u0_ * jnp.asarray(cfg.system.init_std) + jnp.asarray(cfg.system.init_mean)
         return solve_ode_batch(jnp.asarray([0, cfg.system.burnin_time]), u0_)[:, -1]
 
     def estimate_lyapunov_spectrum(

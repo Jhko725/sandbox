@@ -10,7 +10,7 @@ loss_fn:
 loader_partial:
   _partial_: true
   _target_: dynamics_discovery.neighborhood.neighborhood.NeighborhoodSegmentLoader
-  segment_length: 5
+  segment_length: 11
   num_neighbors: 32
   r_min_kwargs:
     multiplier: 8
@@ -23,5 +23,6 @@ loader_partial:
     batch_size: 2048
     random_seed: 0
   efficient_neighborhood: true
+  loader_cache_path: ./data/loader_cache/${...data.dataset.name}.npz
 
 subsavedir: ${.name}/num_neighbors=${.loader_partial.num_neighbors}_weight=${.loss_fn.weight}

@@ -1,12 +1,14 @@
 import logging
 from copy import replace
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 import diffrax as dfx
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 import scipy.spatial as scspatial
 from dynamical_systems.continuous.ode_base import (
     _infer_stepsize_controller,
@@ -101,6 +103,7 @@ class NeighborhoodSegmentLoader(SegmentLoader):
         batch_strategy: AbstractBatching,
         neighbor_cutoff: int | None = None,
         efficient_neighborhood: bool = False,
+        loader_cache_path: Path | str | None = None,
     ):
         if efficient_neighborhood:
             batch_size_new = batch_strategy.batch_size // num_neighbors
@@ -108,20 +111,37 @@ class NeighborhoodSegmentLoader(SegmentLoader):
             num_neighbors = num_neighbors - 1
 
         super().__init__(dataset, segment_length, batch_strategy)
-        logger.info("Calculating minimum radius for neighbor selection")
-        self.r_min = find_r_min(dataset, **r_min_kwargs)
-        logger.info(f"Minimum radius calculated: r_min={self.r_min}")
-
-        logger.info("Calculating maximum radius for neighbor selection")
-        self.r_max = find_r_max(dataset, r_min=self.r_min, **r_max_kwargs)[0]
-        logger.info(f"Maximum radius calculated: r_max={self.r_max}")
 
         self.num_neighbors = num_neighbors
         self.neighbor_cutoff = (
             num_neighbors if neighbor_cutoff is None else neighbor_cutoff
         )
 
-        self._adjacency_matrix = self._build_adjacency_matrix()
+        if loader_cache_path is not None:
+            logger.info(
+                """Cache file for loader provided. The arguments r_min_kwargs, 
+                r_max_kwargs will be ignored."""
+            )
+            loader_cache = np.load(loader_cache_path)
+            self.r_min = loader_cache["r_min"]
+            logger.info(f"Loaded minimum radius: r_min={self.r_min}")
+
+            self.r_max = loader_cache["r_max"]
+            logger.info(f"Loaded maximum radius: r_max={self.r_max}")
+
+            self._adjacency_matrix = AdjacencyMatrix(
+                loader_cache["adjacency_indptr"], loader_cache["adjacency_indices"]
+            )
+        else:
+            logger.info("Calculating minimum radius for neighbor selection")
+            self.r_min = find_r_min(dataset, **r_min_kwargs)
+            logger.info(f"Minimum radius calculated: r_min={self.r_min}")
+
+            logger.info("Calculating maximum radius for neighbor selection")
+            self.r_max = find_r_max(dataset, r_min=self.r_min, **r_max_kwargs)[0]
+            logger.info(f"Maximum radius calculated: r_max={self.r_max}")
+
+            self._adjacency_matrix = self._build_adjacency_matrix()
 
     def _build_adjacency_matrix(self):
         tree = scspatial.KDTree(
@@ -133,6 +153,15 @@ class NeighborhoodSegmentLoader(SegmentLoader):
         distance_matrix = tree.sparse_distance_matrix(tree, self.r_max)
         within_range = distance_matrix >= self.r_min
         return AdjacencyMatrix(within_range.indptr, within_range.indices)
+
+    def save_loader_cache(self, savepath: Path | str):
+        np.savez(
+            savepath,
+            r_min=self.r_min,
+            r_max=self.r_max,
+            adjacency_indptr=self._adjacency_matrix.indptr,
+            adjacency_indices=self._adjacency_matrix.indices,
+        )
 
     def init(self) -> PyTree:
         """
@@ -309,7 +338,7 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
             u0_total = jnp.concatenate((u0.reshape(1, -1), u_neigh0), axis=0)
 
             def _solve(u_):
-                return model.solve(t, u_, args, max_steps=16384, **kwargs)
+                return model.solve(t, u_, args, max_steps=32768, **kwargs)
 
             u_total = eqx.filter_vmap(_solve, out_axes=1)(u0_total)
             return u_total[:, 0], u_total[:, 1:]
@@ -320,7 +349,7 @@ class NeighborhoodMSELoss(AbstractDynamicsLoss):
             )
             du0 = u_neigh0 - u0
             u_pred, du_pred = model_nn.solve(
-                t, (u0, du0), args, max_steps=16384, **kwargs
+                t, (u0, du0), args, max_steps=8192, **kwargs
             )
             u_nn_pred = rearrange(u_pred, "T D -> T 1 D") + du_pred
             return u_pred, u_nn_pred

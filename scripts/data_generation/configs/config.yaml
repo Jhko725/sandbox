@@ -3,8 +3,8 @@ defaults:
   - system: lorenz63
   - launcher: slurm
 
-num_periods: 15
-pts_per_period: 40
+num_periods: 10
+pts_per_period: 100
 
 num_trajectories:
   train: 50
@@ -13,5 +13,5 @@ num_trajectories:
 
 key: 0
 
-savedir: "./data/rescaled"
+savedir: "./data/take3"
 

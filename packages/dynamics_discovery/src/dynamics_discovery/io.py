@@ -1,9 +1,9 @@
 import mmap
+import warnings
 from collections.abc import Mapping
 from pathlib import Path
 
 import equinox as eqx
-import more_itertools
 import orbax.checkpoint as ocp
 from hydra.utils import instantiate
 from jaxtyping import PyTree
@@ -50,16 +50,15 @@ def _infer_step(ckpt_dir: Path) -> int:
     """Given a checkpoint directory created by orbax.checkpoint consisting of a
     checkpoint from a single train step, determine and return the corresponding step
     number."""
-    ckpt_step_dirs = filter(
-        lambda p: p.is_dir() and p.stem.isnumeric(), ckpt_dir.iterdir()
+    ckpt_step_dirs = sorted(
+        filter(lambda p: p.is_dir() and p.stem.isnumeric(), ckpt_dir.iterdir())
     )
-    try:
-        return int(more_itertools.one(ckpt_step_dirs).stem)
-    except ValueError:
-        raise ValueError(
-            """Given directory contains checkpoints from multiple steps, and thus step 
-            cannot be inferred."""
+    if len(ckpt_step_dirs) > 1:
+        warnings.warn(
+            """Given directory contains checkpoints from multiple steps. Returning the largest step."""
         )
+        print(ckpt_step_dirs)
+    return int(ckpt_step_dirs[-1].stem)
 
 
 def load_model(

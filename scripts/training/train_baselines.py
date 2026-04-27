@@ -16,15 +16,15 @@ def main(cfg: DictConfig) -> None:
         jax.config.update("jax_default_device", jax.devices("gpu")[cfg.gpu_id])
 
     model = hydra.utils.instantiate(cfg.model)
-    time_slice = slice(0, 500 * cfg.data.downsample_factor, cfg.data.downsample_factor)
+    # time_slice = slice(0, 500 * cfg.data.downsample_factor, cfg.data.downsample_factor)
 
     dataset_train, transform = TimeSeriesDataset.from_hdf5(
-        cfg.data.dataset.loadpath.train, time_slice=time_slice
+        cfg.data.dataset.loadpath.train,  # time_slice=time_slice
     ).standardize()
     dataset_train = dataset_train.add_noise(cfg.data.noise_std_relative)
 
     dataset_valid = TimeSeriesDataset.from_hdf5(
-        cfg.data.dataset.loadpath.validation, time_slice=time_slice
+        cfg.data.dataset.loadpath.validation,  # time_slice=time_slice
     ).apply_transform(transform)
 
     loader_partial = hydra.utils.instantiate(cfg.method.loader_partial)

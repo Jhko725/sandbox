@@ -1,0 +1,19 @@
+ode:
+  _target_: dynamical_systems.continuous.HyperChen05
+
+rtol: 1e-8
+atol: 1e-10
+
+init_mean: [0,0,20,0]
+init_std: 1.0
+
+burnin_time: 100.0
+
+period_estimation:
+  t_max: 100
+  dt: 0.02
+  smoothing: 5
+
+lyapunov_estimation:
+  t_max: 1200.0
+  dt: 0.1
